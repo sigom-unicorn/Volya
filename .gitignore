@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.log
+manifest_temp.pdf
 
 # Системные и временные файлы ОС
 .DS_Store
