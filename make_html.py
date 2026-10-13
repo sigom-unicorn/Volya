@@ -565,7 +565,7 @@ html_content = """<!DOCTYPE html>
 <!-- SECTION VI -->
 <h2>VI. Лестница Совести: Ступени Ролей и Восхождение Разума</h2>
 
-<p><strong>Квесты свободны от ступеней.</strong> Квест — это открытое поле созидания, общая ветвь Живого Древа, в которой могут участвовать любые игроки. <strong>Ступени принадлежат Ролям внутри Кона квестов.</strong> Лестница Совести выражает не внешнюю иерархию, а <strong>глубину опыта гармоничной жизни</strong>, необходимую для принятия ответственности соответствующего масштаба:</p>
+<p><strong>Ступени принадлежат Ролям внутри Кона квестов.</strong> Лестница Совести выражает не внешнюю иерархию, а <strong>глубину опыта гармоничной жизни</strong>, необходимую для принятия ответственности соответствующего масштаба:</p>
 
 <div class="diagram-card">
   <div class="diagram-title">Лестница восхождения опыта совести и ответственности ролей</div>
@@ -632,32 +632,47 @@ html_content = """<!DOCTYPE html>
 
 <!-- TREE VISUALIZATION -->
 <div class="diagram-card">
-  <div class="diagram-title">Архитектура Вольного Древа и Корневого Дома</div>
+  <div class="diagram-title">Архитектура Живого Древа (Священный Баньян)</div>
   <div class="tree-container">
-    <div class="tree-row">
-      <div class="tree-node root">КВЕСТ «ВОЛЯ» (Исток Древа, Ствол Корня)</div>
+    <!-- Крона и Ветви (вверху) -->
+    <div class="tree-row" style="gap: 6px;">
+      <div class="tree-node branch" style="min-width: 95px;">Дом (Очаг)</div>
+      <div class="tree-node branch" style="min-width: 105px;">Склад (Инструменты)</div>
+      <div class="tree-node branch" style="min-width: 100px;">Дары Природы</div>
+      <div class="tree-node branch" style="min-width: 100px;">Мастерская</div>
     </div>
     <div class="tree-row" style="margin: 2px 0;">
-      <span style="color: #999; font-size: 9pt;">│ ──────────────┬────────────── │</span>
+      <span style="color: #999; font-size: 8pt;">▲ ──────────────── ▲ ──────────────── ▲</span>
     </div>
-    <div class="tree-row" style="gap: 10px;">
-      <div class="tree-node branch" style="min-width: 125px;">Посвящение • Портал</div>
-      <div class="tree-node trunk">ВОЛЬНИЦА (Ствол на земле)</div>
-      <div class="tree-node root-home">КОРНЕВОЙ ДОМ (Инферно)</div>
+    <!-- Стволы (Вольницы) -->
+    <div class="tree-row" style="gap: 12px;">
+      <div class="tree-node trunk" style="min-width: 125px;">Вольница 1</div>
+      <div class="tree-node trunk" style="min-width: 125px;">Вольница 2</div>
+      <div class="tree-node trunk" style="min-width: 125px;">Вольница 3</div>
     </div>
-    <div class="tree-row" style="margin: 3px 0;">
-      <div style="flex: 1;"></div>
-      <div style="min-width: 175px; text-align: center; color: #999; font-size: 8.5pt;">│</div>
-      <div style="flex: 1; text-align: center;">
-        <span class="symbiosis-badge">⟵ Братский Лад: Поддержка / Сотворчество ⟶</span>
+    <div class="tree-row" style="margin: 2px 0;">
+      <span style="color: #999; font-size: 8pt;">▲ ──────────────── ▲ ──────────────── ▲</span>
+    </div>
+    <!-- Сердцевина основания (Квест Воля) -->
+    <div class="tree-row">
+      <div class="tree-node root" style="min-width: 320px;">КВЕСТ «ВОЛЯ» (Исток Древа, Ствол Корня)</div>
+    </div>
+    <div class="tree-row" style="margin: 2px 0;">
+      <span style="color: #999; font-size: 8pt;">▼ ─────────────────────────────────── ▼</span>
+    </div>
+    <!-- Корневые квесты (внизу) -->
+    <div class="tree-row" style="gap: 16px;">
+      <div class="tree-node root-home" style="min-width: 190px;">
+        <strong>Портал Воли</strong><br>
+        <span style="font-size: 7pt; color: #73510d;">Посвящение • Вече</span>
+      </div>
+      <div class="tree-node root-home" style="min-width: 190px;">
+        <strong>Корневой Дом</strong><br>
+        <span style="font-size: 7pt; color: #73510d;">Очаг в городах инферно</span>
       </div>
     </div>
-    <div class="tree-row" style="gap: 10px;">
-      <div style="min-width: 125px;"></div>
-      <div class="tree-node branch">Дом • Мастерская • Склад • Дары Природы</div>
-      <div style="min-width: 175px; font-size: 7.2pt; color: #73510d; text-align: center; font-style: italic;">
-        Опора Вольниц из городов
-      </div>
+    <div class="tree-row" style="margin-top: 4px;">
+      <span class="symbiosis-badge">⟵ Братский Лад: Опора в городах ⟷ Доступ к квестам на земле ⟶</span>
     </div>
   </div>
 </div>
@@ -705,16 +720,27 @@ with open("c:\\Volya\\manifest.html", "w", encoding="utf-8") as f:
 print("HTML re-saved with updated ontology.")
 
 chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-pdf_file = r"c:\Volya\Манифест Воли.pdf"
+pdf_file = os.path.abspath(r"c:\Volya\Манифест Воли.pdf")
+html_path = os.path.abspath(r"c:\Volya\manifest.html")
+
+tmp_pdf = os.path.abspath(r"c:\Volya\manifest_temp.pdf")
+if os.path.exists(tmp_pdf):
+    os.remove(tmp_pdf)
 
 cmd = [
     chrome_path,
     "--headless=new",
     "--disable-gpu",
     "--no-pdf-header-footer",
-    f"--print-to-pdf={pdf_file}",
-    r"c:\Volya\manifest.html"
+    f"--print-to-pdf={tmp_pdf}",
+    html_path
 ]
 
-subprocess.run(cmd, check=True)
+res = subprocess.run(cmd, check=True)
+os.replace(tmp_pdf, pdf_file)
+
+import datetime
+mtime = os.path.getmtime(pdf_file)
+dt = datetime.datetime.fromtimestamp(mtime)
 print(f"PDF successfully compiled to {pdf_file}")
+print(f"Size: {os.path.getsize(pdf_file)} bytes, Created at: {dt}")
