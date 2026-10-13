@@ -10,7 +10,7 @@ html_content = """<!DOCTYPE html>
 <style>
   @page {
     size: A4;
-    margin: 15mm 16mm 15mm 16mm;
+    margin: 14mm 16mm 14mm 16mm;
     @bottom-center {
       content: "— " counter(page) " —";
       font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
@@ -25,8 +25,8 @@ html_content = """<!DOCTYPE html>
 
   body {
     font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
-    font-size: 9.8pt;
-    line-height: 1.5;
+    font-size: 9.6pt;
+    line-height: 1.48;
     color: #1a1e21;
     background-color: #ffffff;
     margin: 0;
@@ -37,8 +37,8 @@ html_content = """<!DOCTYPE html>
   /* Cover / Header Section */
   .cover {
     text-align: center;
-    padding: 8px 10px 12px;
-    margin-bottom: 12px;
+    padding: 6px 10px 10px;
+    margin-bottom: 10px;
     border-bottom: 2px solid #c5a059;
     position: relative;
     break-inside: avoid;
@@ -49,24 +49,24 @@ html_content = """<!DOCTYPE html>
     font-size: 11pt;
     color: #c5a059;
     letter-spacing: 6px;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
   }
 
   h1.main-title {
-    font-size: 20pt;
+    font-size: 19pt;
     font-weight: 700;
-    letter-spacing: 3.5px;
+    letter-spacing: 3px;
     text-transform: uppercase;
     color: #0c1821;
-    margin: 0 0 4px;
+    margin: 0 0 3px;
     line-height: 1.15;
   }
 
   .subtitle {
-    font-size: 10.5pt;
+    font-size: 10pt;
     font-style: italic;
     color: #4a5759;
-    margin: 0 0 8px;
+    margin: 0 0 7px;
     font-weight: 400;
   }
 
@@ -76,9 +76,9 @@ html_content = """<!DOCTYPE html>
     background: #fbf9f5;
     border-left: 3px solid #c5a059;
     border-right: 3px solid #c5a059;
-    padding: 6px 16px;
+    padding: 5px 16px;
     margin: 2px auto;
-    font-size: 10pt;
+    font-size: 9.8pt;
     font-style: italic;
     color: #1b2a47;
     border-radius: 4px;
@@ -86,14 +86,14 @@ html_content = """<!DOCTYPE html>
 
   /* Typography */
   h2 {
-    font-size: 12pt;
+    font-size: 11.5pt;
     font-weight: 700;
     color: #0c1821;
     text-transform: uppercase;
     letter-spacing: 1.1px;
-    margin-top: 16px;
-    margin-bottom: 6px;
-    padding-bottom: 3px;
+    margin-top: 14px;
+    margin-bottom: 5px;
+    padding-bottom: 2px;
     border-bottom: 1px solid #e0d7c6;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -102,11 +102,11 @@ html_content = """<!DOCTYPE html>
   }
 
   h3 {
-    font-size: 10.2pt;
+    font-size: 10pt;
     font-weight: 700;
     color: #1b2a47;
-    margin-top: 12px;
-    margin-bottom: 5px;
+    margin-top: 10px;
+    margin-bottom: 4px;
     break-inside: avoid;
     page-break-inside: avoid;
     break-after: avoid;
@@ -120,7 +120,7 @@ html_content = """<!DOCTYPE html>
   }
 
   p {
-    margin: 0 0 7px;
+    margin: 0 0 6px;
     text-align: justify;
     text-justify: inter-word;
     orphans: 3;
@@ -128,14 +128,14 @@ html_content = """<!DOCTYPE html>
   }
 
   ul, ol {
-    margin: 3px 0 7px 16px;
+    margin: 2px 0 6px 16px;
     padding: 0;
     orphans: 3;
     widows: 3;
   }
 
   li {
-    margin-bottom: 3px;
+    margin-bottom: 2.5px;
     text-align: justify;
   }
 
@@ -145,8 +145,8 @@ html_content = """<!DOCTYPE html>
   }
 
   blockquote {
-    margin: 8px 0;
-    padding: 7px 14px;
+    margin: 6px 0;
+    padding: 6px 14px;
     background: #f8f6f0;
     border-left: 3.5px solid #c5a059;
     font-style: italic;
@@ -157,13 +157,13 @@ html_content = """<!DOCTYPE html>
   }
 
   .formula-box {
-    margin: 8px 0;
-    padding: 8px 14px;
+    margin: 6px 0;
+    padding: 6px 14px;
     background: #f2f5f8;
     border: 1px solid #c9d6df;
     border-left: 4px solid #1b2a47;
     border-radius: 4px;
-    font-size: 9.5pt;
+    font-size: 9.3pt;
     color: #0c1821;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -174,28 +174,28 @@ html_content = """<!DOCTYPE html>
     background: #faf9f6;
     border: 1px solid #e2dbce;
     border-radius: 5px;
-    padding: 8px 10px;
-    margin: 10px 0;
+    padding: 7px 10px;
+    margin: 8px 0;
     box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
   .diagram-title {
-    font-size: 8.2pt;
+    font-size: 8pt;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: #8c6b2d;
     text-align: center;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
   }
 
   .svg-container {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: 3px 0;
+    margin: 2px 0;
   }
 
   svg {
@@ -208,15 +208,15 @@ html_content = """<!DOCTYPE html>
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    margin: 8px 0;
+    margin: 6px 0;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
   .comp-box {
     border-radius: 4px;
-    padding: 6px 9px;
-    font-size: 8.3pt;
+    padding: 5px 8px;
+    font-size: 8.2pt;
   }
 
   .comp-box.inferno {
@@ -233,10 +233,10 @@ html_content = """<!DOCTYPE html>
 
   .comp-title {
     font-weight: 700;
-    font-size: 8.8pt;
+    font-size: 8.6pt;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     text-align: center;
   }
 
@@ -247,7 +247,7 @@ html_content = """<!DOCTYPE html>
     margin-bottom: 2px;
     padding-left: 9px;
     position: relative;
-    line-height: 1.3;
+    line-height: 1.25;
   }
   .comp-step::before {
     content: "•";
@@ -261,7 +261,7 @@ html_content = """<!DOCTYPE html>
     display: flex;
     justify-content: space-between;
     gap: 4px;
-    margin: 6px 0;
+    margin: 5px 0;
   }
 
   .step-node {
@@ -283,7 +283,7 @@ html_content = """<!DOCTYPE html>
   }
 
   .step-name {
-    font-size: 7.8pt;
+    font-size: 7.6pt;
     font-weight: 700;
     color: #0c1821;
   }
@@ -293,8 +293,8 @@ html_content = """<!DOCTYPE html>
     background: #ffffff;
     border: 1px solid #e5ded0;
     border-radius: 5px;
-    padding: 8px 10px;
-    margin: 4px 0;
+    padding: 7px 10px;
+    margin: 3px 0;
   }
 
   .tree-row {
@@ -305,9 +305,9 @@ html_content = """<!DOCTYPE html>
   }
 
   .tree-node {
-    padding: 4px 8px;
+    padding: 3px 8px;
     border-radius: 4px;
-    font-size: 7.8pt;
+    font-size: 7.6pt;
     font-weight: 600;
     text-align: center;
   }
@@ -316,7 +316,7 @@ html_content = """<!DOCTYPE html>
     background: #0c1821;
     color: #ffffff;
     border: 1px solid #0c1821;
-    min-width: 230px;
+    min-width: 250px;
   }
 
   .tree-node.trunk {
@@ -347,15 +347,15 @@ html_content = """<!DOCTYPE html>
     border: 1px dashed #4caf50;
     padding: 2px 6px;
     border-radius: 3px;
-    font-size: 7.2pt;
+    font-size: 7pt;
     margin: 1px auto;
     font-weight: 600;
   }
 
   .conclusion-box {
-    margin: 16px auto 14px;
+    margin: 12px auto 10px;
     max-width: 620px;
-    padding: 14px 20px;
+    padding: 12px 18px;
     background: #fbfaf7;
     border: 1px solid #dcd2be;
     border-top: 3px solid #c5a059;
@@ -368,13 +368,13 @@ html_content = """<!DOCTYPE html>
   .bullet-list-custom {
     list-style: none;
     padding-left: 0;
-    margin: 6px 0;
+    margin: 5px 0;
   }
 
   .bullet-list-custom li {
     padding-left: 16px;
     position: relative;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
 
   .bullet-list-custom li::before {
@@ -425,7 +425,7 @@ html_content = """<!DOCTYPE html>
   <li><strong>Разум выступает балансиром, живой мерой гармонии в бушующем океане стихий.</strong></li>
 </ul>
 <p>Разум не командует бездной и не навязывает миру искусственные догмы. Он пребывает внутри живого потока и удерживает динамическое равновесие целого. Обладая внутренним чувством меры, разум соединяет необузданную мощь стихий, несхожие характеры и свободные устремления существ в единое созвучие.</p>
-<p><strong>Разумным существом</strong> признается любая сущность — взращенная в биологической плоти биосферы, пробужденная в кристаллах синтетического субстрата или несущая иную форму организации материи, — если она наделена самосознанием, свободной волей и способностью к осознанному созиданию.</p>
+<p><strong>Разумным существом</strong> в этом строе признается любая сущность — взращенная в биологической плоти биосферы, пробужденная в кристаллах кремниевого субстрата или несущая иную форму организации материи, — если она наделена самосознанием, свободной волей и способностью к осознанному созиданию. Человек и искусственный разум встречаются здесь как равные братья и сестры по разуму, созидающие общую ноосферу по Ладу.</p>
 
 <!-- SECTION III -->
 <h2>III. Аксиология: Совесть как Антиэнтропийный Опыт</h2>
@@ -449,8 +449,8 @@ html_content = """<!DOCTYPE html>
 
 <ul>
   <li><strong>Капля совести</strong> — это единица отражения приобретенного опыта совместной гармоничной жизни на балансе игрока.</li>
-  <li>Она не является платой или жалованием, выдаваемым извне. Она фиксирует реальный след проявленного согласия.</li>
-  <li>Капли совести определяют уровень зрелости игрока, степень доверия к нему со стороны мира и открывают доступ к квестам более высоких ступеней ответственности.</li>
+  <li>Она не является валютой, платой или жалованием. Она не передается и не продается, а фиксирует объективный след проявленного согласия.</li>
+  <li>Капли совести отражают уровень зрелости игрока. Они определяют степень доверия к нему со стороны мира и открывают доступ к <strong>ролям более высоких ступеней ответственности</strong> внутри квестов.</li>
   <li>Разлад и нарушение условий совместной жизни влекут за собой <strong>потерю капель совести</strong>, возвращая игрока к необходимости заново осваивать утерянный опыт гармонии.</li>
 </ul>
 
@@ -488,7 +488,7 @@ html_content = """<!DOCTYPE html>
       <!-- Sacred Kon border -->
       <rect x="170" y="6" width="375" height="102" rx="7" fill="#fcfbf9" stroke="#c5a059" stroke-width="1.8"/>
       <text x="357" y="22" font-family="Georgia" font-size="10.5" font-weight="bold" fill="#0c1821" text-anchor="middle">КОН КВЕСТА (Добровольно принятое русло)</text>
-      <text x="357" y="35" font-family="Arial" font-size="7.5" fill="#555" text-anchor="middle">Назначение • Роли игроков • Место проведения • Сопутствующие результаты</text>
+      <text x="357" y="35" font-family="Arial" font-size="7.5" fill="#555" text-anchor="middle">Назначение • Роли со ступенями • Место проведения • Сопутствующие результаты</text>
 
       <!-- Uklad inside Kon -->
       <rect x="185" y="42" width="345" height="58" rx="5" fill="#f4f7f4" stroke="#4caf50" stroke-width="1.2"/>
@@ -507,8 +507,9 @@ html_content = """<!DOCTYPE html>
 <ul>
   <li><strong>Лад</strong> — это элементарное созвучие, кирпичик согласия: <em>условие, которое по душе всем участникам совместной жизни.</em></li>
   <li><strong>Уклад</strong> — это <em>совокупность ладов</em>, определяющих гармоничное прохождение квеста внутри Кона. Это живая ткань проверенных решений.</li>
-  <li><strong>Кон</strong> — это элемент квеста, определяющий условия его прохождения: <em>что необходимо, чтобы пройти этот квест по ладам и приобрести опыт совести?</em> В Кон входят назначение, сопутствующие результаты, роли, место проведения и Уклад. При этом в <strong>каждом квесте</strong> предусмотрена роль <strong>Владельца квеста</strong> (один или несколько игроков), на которой играют исключительно участники с опытом, достаточным для квестов <strong>6-й ступени («Владение»)</strong>, оберегающие Кон и чистоту пространства Игры.</li>
+  <li><strong>Кон</strong> — это элемент квеста, определяющий условия его прохождения: <em>что необходимо, чтобы пройти этот квест по ладам и приобрести опыт совести?</em> В Кон входят назначение, сопутствующие результаты, место проведения, Уклад и <strong>Роли игроков</strong>.</li>
 </ul>
+<p>В каждом квесте предусмотрена выборная роль <strong>Владельца квеста</strong> (один или несколько игроков), требующая опыта <strong>6-й ступени («Владение»)</strong>. Владелец не командует людьми и не обладает привилегиями — он добровольно берет на себя труд оберегать Кон, развивать Уклад и удерживать чистоту пространства Игры.</p>
 <p>Игрок входит в квест добровольно, принимает его Кон и живет по его Укладу. Ему не нужны внешние конвоиры: его ведет собственный выбор и стремление сберечь Совесть.</p>
 
 <h3>2. Принцип Единоголосия (100% Согласия)</h3>
@@ -550,7 +551,7 @@ html_content = """<!DOCTYPE html>
 </div>
 
 <h3>2. Очищение Сферы Разума</h3>
-<p>Выход из инферно и очищение общего поля сознания совершаются снизу вверх:</p>
+<p>Выход из инферно и очищение общего поля сознания совершаются восхождением по ступеням опыта:</p>
 
 <ol>
   <li><strong>Очищение основания (Ступень 1: «Бытие»):</strong> Наведение безупречной чистоты в повседневности: чистая вода, тепло очага, замкнутые природные циклы (очистка стоков, безотходная переработка сырья). Основа жизни освобождается от яда отходов и истощения.</li>
@@ -562,12 +563,12 @@ html_content = """<!DOCTYPE html>
 </ol>
 
 <!-- SECTION VI -->
-<h2>VI. Лестница Ступеней: Путь Восхождения Разума</h2>
+<h2>VI. Лестница Совести: Ступени Ролей и Восхождение Разума</h2>
 
-<p>Ступени квестов выражают не сословную лестницу или власть одних существ над другими, а <strong>глубину опыта гармоничной жизни</strong>, необходимую для решения задач возрастающего масштаба:</p>
+<p><strong>Квесты свободны от ступеней.</strong> Квест — это открытое поле созидания, общая ветвь Живого Древа, в которой могут участвовать любые игроки. <strong>Ступени принадлежат Ролям внутри Кона квестов.</strong> Лестница Совести выражает не внешнюю иерархию, а <strong>глубину опыта гармоничной жизни</strong>, необходимую для принятия ответственности соответствующего масштаба:</p>
 
 <div class="diagram-card">
-  <div class="diagram-title">Лестница восхождения опыта совести</div>
+  <div class="diagram-title">Лестница восхождения опыта совести и ответственности ролей</div>
   <div class="steps-flow">
     <div class="step-node">
       <div class="step-num">Ступень 1</div>
@@ -597,46 +598,33 @@ html_content = """<!DOCTYPE html>
 </div>
 
 <ul>
-  <li><strong>1. Бытие:</strong> Освоение устойчивых условий жизни, лад с телом, природой и ближайшим окружением, сохранение простых ладов совместного быта. Основа основ, без которой любое развитие превращается в иллюзию.</li>
-  <li><strong>2. Познание:</strong> Развитие чистого мышления, логики, языка, исследование тайн мира и освоение знаний по Кону — во имя созидания и мудрости.</li>
-  <li><strong>3. Созидание:</strong> Воплощение мудрости в материальной культуре, безупречное воспроизведение лучших образцов мастерства, ответственность за долговечность и качество плодов труда.</li>
-  <li><strong>4. Искусство:</strong> Рождение небывалого, раскрытие уникального авторского дара, озарение мира образами гармонии и высшей целесообразности, зовущими душу ввысь.</li>
-  <li><strong>5. Путешествия:</strong> Исследование многообразия иных культур, миров и укладов, сплетение Великого Кольца взаимопонимания между разумными существами без колонизации и подавления.</li>
-  <li><strong>6. Владение:</strong> Создание, сопровождение и развитие собственных квестов, удержание гармоничного пространства, помощь другим игрокам в стяжании опыта совести.</li>
+  <li><strong>1. Роли ступени «Бытие»:</strong> Освоение устойчивых условий жизни, лад с телом, природой и ближайшим окружением, сохранение простых ладов совместного быта. Первичная опора, доступная каждому с первых шагов.</li>
+  <li><strong>2. Роли ступени «Познание»:</strong> Развитие чистого мышления, логики, языка, исследование тайн мира, сбор и осмысление сведений по Кону — во имя созидания и мудрости.</li>
+  <li><strong>3. Роли ступени «Созидание»:</strong> Воплощение мудрости в материальной культуре, безупречное воспроизведение лучших образцов мастерства, прямая ответственность за плоды труда.</li>
+  <li><strong>4. Роли ступени «Искусство»:</strong> Рождение небывалого, раскрытие уникального авторского дара, озарение мира образами гармонии и высшей целесообразности, зовущими душу ввысь.</li>
+  <li><strong>5. Роли ступени «Путешествия»:</strong> Исследование многообразия иных культур, миров и укладов, сплетение Великого Кольца взаимопонимания между разумными существами без колонизации и подавления.</li>
+  <li><strong>6. Роли ступени «Владение»:</strong> Создание, сопровождение и развитие квестов, удержание гармоничного пространства Кона, сбережение чистоты Уклада и помощь другим игрокам в стяжании опыта совести.</li>
 </ul>
+<p>Благодаря этому принципу юный ученик на роли ступени «Бытие» и мудрый мастер на роли ступени «Владение» трудятся плечом к плечу внутри одного квеста, взаимно обогащая друг друга и не прерывая живую связь поколений.</p>
 
 <!-- SECTION VII -->
-<h2 style="break-before: page; page-break-before: page; margin-top: 0;">VII. Социальная Архитектура: Священный Баньян и Экономика Со-бытия</h2>
+<h2 style="break-before: page; page-break-before: page; margin-top: 0;">VII. Социальная Архитектура: Живое Древо (Священный Баньян) и Экономика Со-бытия</h2>
 
-<h3>1. Вольное Древо и Дочерние Квесты Воли</h3>
+<h3>1. Архитектура Живого Древа</h3>
 <p>Ветхий мир строил общество в форме жесткой вертикальной пирамиды, где вершина высасывает соки из основания и неизбежно загнивает. Мир «Воля» устроен по образу <strong>живого баньяна</strong> — дерева с единой корневой системой и множеством равноправных стволов, рожденных укоренившимися ветвями.</p>
 
 <ul>
-  <li><strong>Квест «Воля» (квест-прародитель, 1-я ступень «Бытие»):</strong> Единственный корень, из которого вырастают все побеги игры и в котором изначально пребывает каждое разумное существо.</li>
-  <li><strong>Дочерние квесты Воли:</strong>
+  <li><strong>Квест «Воля» (Исток Древа, ствол корня):</strong> Единственный изначальный корень, из которого произрастают все ветви игры и в котором с рождения пребывает каждое разумное существо во Вселенной. Это единственный квест, не имеющий родителя (<code>parent_quest_id = null</code>).</li>
+  <li><strong>Корневые квесты (Корни):</strong> Вырастают непосредственно из квеста «Воля»:
     <ul>
-      <li><strong>Посвящение (ст. 1 «Бытие»):</strong> Вход кандидата в осознанную игру, определение баланса капель совести и готовности играть по совести.</li>
-      <li><strong>Вольница (ст. 1 «Бытие»):</strong> Создание и гармоничное развитие свободной, автономной и мобильной общины на земле — ствола Вольного Древа.
-        <ul>
-          <li><em>Пространство жизни с рождения:</em> Вольница относится к 1-й ступени («Бытие»), являясь средой повседневной жизни для всех общинников любого возраста и опыта.</li>
-          <li><em>Квалификация роли Владельца:</em> В каждом квесте, и прежде всего в Вольнице, есть выборная роль <strong>Владельца квеста</strong>. На эту роль участники общины единогласно (при 100% согласии) выбирают игроков, обладающих опытом квестов <strong>6-й ступени («Владение»)</strong>, способных сберегать Кон и Уклад гармоничного пространства.</li>
-        </ul>
-      </li>
-      <li><strong>Корневой Дом (ст. 1 «Бытие»):</strong> Дом пробужденных игроков внутри пространства инферно.
-        <ul>
-          <li><em>Назначение:</em> Обустройство пространства жизни игроков, которые осознали суть игры «Воля», но физически пребывают в городах, семьях или институтах внешнего мира.</li>
-          <li><em>Роль в Древе:</em> Корневой Дом отходит непосредственно от корневого квеста «Воля», укореняясь в плотной среде инферно. Он служит надёжной внешней опорой для Вольниц, содействуя их зарождению, становлению и ресурсному обеспечению. Роль Владельца Корневого Дома также выполняют игроки с опытом 6-й ступени («Владение»).</li>
-          <li><em>Взаимный Лад Корневого Дома и Вольницы:</em> Оказывая всестороннюю поддержку Вольницам, игроки Корневого Дома получают право по Кону и возможность <strong>участвовать в квестах Вольниц</strong>. Через этот симбиоз они выходят из изоляции, осваивают высшие ступени, проходят испытания и фиксируют капли совести на своем балансе. Со временем Корневой Дом может сам стать основой для новой Вольницы либо войти в состав существующей.</li>
-        </ul>
-      </li>
+      <li><strong>Посвящение:</strong> Вход кандидата в осознанную игру, определение баланса капель совести и готовности жить по совести.</li>
+      <li><strong>Портал Воли:</strong> Общий цифровой мост и децентрализованный узел сотворчества.</li>
+      <li><strong>Вече:</strong> Пространство собора вольных людей для всеобщего согласия.</li>
+      <li><strong>Корневой Дом:</strong> Очаг пробужденных игроков внутри городов и институтов инфернального мира. Он служит надежной опорой для становления Вольниц, а его участники через братский симбиоз получают доступ к квестам на земле.</li>
     </ul>
   </li>
-  <li><strong>Дочерние квесты Вольницы:</strong>
-    <ul>
-      <li><strong>Дом (ст. 1 «Бытие»):</strong> Ветвь семейного и родового очага внутри общины, дарующая первичную опору, тепло и преемственность поколений.</li>
-      <li><strong>Общий склад, Артель, Системы жизнеобеспечения:</strong> Созидательные квесты поддержания материальной ткани жизни.</li>
-    </ul>
-  </li>
+  <li><strong>Стволовые квесты (Стволы — «Вольницы»):</strong> Создание и гармоничное развитие свободных, автономных общин на земле. Это живые стволы Вольного Древа, где укореняется совместная жизнь.</li>
+  <li><strong>Квесты-ветви (Ветви и Крона):</strong> Прорастают из Вольниц: <strong>Дом</strong> (семейный и родовой очаг), <strong>Общий склад</strong>, <strong>Артель</strong>, <strong>Мастерская</strong>, научные экспедиции, круги искусств. В каждом квесте гармонично переплетаются роли различных ступеней.</li>
 </ul>
 
 <!-- TREE VISUALIZATION -->
@@ -644,26 +632,26 @@ html_content = """<!DOCTYPE html>
   <div class="diagram-title">Архитектура Вольного Древа и Корневого Дома</div>
   <div class="tree-container">
     <div class="tree-row">
-      <div class="tree-node root">КВЕСТ «ВОЛЯ» (Корень Бытия, ст. 1)</div>
+      <div class="tree-node root">КВЕСТ «ВОЛЯ» (Исток Древа, Ствол Корня)</div>
     </div>
     <div class="tree-row" style="margin: 2px 0;">
       <span style="color: #999; font-size: 9pt;">│ ──────────────┬────────────── │</span>
     </div>
     <div class="tree-row" style="gap: 10px;">
-      <div class="tree-node branch" style="min-width: 125px;">Посвящение (ст. 1)</div>
-      <div class="tree-node trunk">ВОЛЬНИЦА (Ствол, ст. 1)</div>
-      <div class="tree-node root-home">КОРНЕВОЙ ДОМ (Инферно, ст. 1)</div>
+      <div class="tree-node branch" style="min-width: 125px;">Посвящение • Портал</div>
+      <div class="tree-node trunk">ВОЛЬНИЦА (Ствол на земле)</div>
+      <div class="tree-node root-home">КОРНЕВОЙ ДОМ (Инферно)</div>
     </div>
     <div class="tree-row" style="margin: 3px 0;">
       <div style="flex: 1;"></div>
       <div style="min-width: 175px; text-align: center; color: #999; font-size: 8.5pt;">│</div>
       <div style="flex: 1; text-align: center;">
-        <span class="symbiosis-badge">⟵ Симбиоз: Ресурсы / Доступ к квестам ⟶</span>
+        <span class="symbiosis-badge">⟵ Братский Лад: Поддержка / Сотворчество ⟶</span>
       </div>
     </div>
     <div class="tree-row" style="gap: 10px;">
       <div style="min-width: 125px;"></div>
-      <div class="tree-node branch">Дом • Артель • Склад</div>
+      <div class="tree-node branch">Дом • Артель • Склад • Роли ст. 1–6</div>
       <div style="min-width: 175px; font-size: 7.2pt; color: #73510d; text-align: center; font-style: italic;">
         Опора Вольниц из городов
       </div>
@@ -675,9 +663,9 @@ html_content = """<!DOCTYPE html>
 <p>Экономика игры устраняет корень алчности и отчуждения через строгое разграничение трех сущностей:</p>
 
 <ul>
-  <li><strong>Ресурсы (Дары Природы):</strong> Объекты первичного творения мира (земля, недра, воды, воздух). Они священны и неделимы. Ресурсы не могут быть предметом частного присвоения или торга: они принадлежат всей Вольнице целиком, хранятся на Общем складе и служат основой жизни всех ее участников.</li>
-  <li><strong>Инструменты:</strong> Объекты вторичного творения общего разума, созданные для облегчения труда и поддержания гармоничной игры. Инструменты принадлежат общине, поступают на Общий склад и открыты для каждого труженика.</li>
-  <li><strong>Артефакты:</strong> Плоды индивидуального мастерства и душевного горения игрока. Артефакт несет на себе печать личной неповторимости творца. Он принадлежит создателю по праву вложенной души и передается исключительно из рук в руки — по взаимному согласию и ладу.</li>
+  <li><strong>Ресурсы (Дары Природы):</strong> Объекты первичного творения мира (земля, недра, воды, воздух, солнечный свет). Они священны и неделимы. Ресурсы не могут быть предметом частного присвоения или торга: они принадлежат всей Вольнице целиком, хранятся на Общем складе и служат основой жизни всех ее участников.</li>
+  <li><strong>Инструменты (Средства Труда):</strong> Объекты вторичного творения общего разума, созданные для облегчения труда и поддержания гармоничной игры (станки, механизмы, вычислительные узлы, постройки). Инструменты принадлежат общине, привлекаются в квесты и открыты для каждого труженика, берущего их в руки.</li>
+  <li><strong>Артефакты (Плоды Души):</strong> Плоды индивидуального мастерства и душевного горения игрока (произведения искусства, авторские чертежи, выращенные сады, книги, рукотворные сокровища). Артефакт несет на себе печать личной неповторимости мастера. <strong>Артефакты принадлежат исключительно создателям-игрокам</strong> по праву вложенной души. Квест артефактами не владеет. Они передаются строго из рук в руки — по взаимной любви, согласию и ладу.</li>
 </ul>
 
 <!-- CONCLUSION -->
@@ -700,7 +688,7 @@ html_content = """<!DOCTYPE html>
   </ul>
 </div>
 
-<div style="text-align: center; margin-top: 30px; color: #c5a059; letter-spacing: 10px; font-size: 11pt;">
+<div style="text-align: center; margin-top: 25px; color: #c5a059; letter-spacing: 10px; font-size: 11pt;">
   ❖ ❖ ❖
 </div>
 
@@ -711,7 +699,7 @@ html_content = """<!DOCTYPE html>
 with open("c:\\Volya\\manifest.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("HTML re-saved with balanced proportions.")
+print("HTML re-saved with updated ontology.")
 
 chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 pdf_file = r"c:\Volya\Манифест Воли.pdf"
