@@ -1,0 +1,14 @@
+# Внешний репозиторий старого рантайма
+ai_volya/
+
+# Временные файлы Python и кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Системные и временные файлы ОС
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
