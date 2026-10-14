@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вселенная «Воля» // Суверенный Портал</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       Шапка Суверена
+       ======================================================================== -->
+  <header id="sovereign-header">
+    <div class="brand-section">
+      <div class="brand-logo" title="Живое Древо Воли" onclick="toggleTreeDrawer()">🌳</div>
+      <div class="brand-title">
+        <span class="brand-name">ВОЛЯ</span>
+        <span class="brand-sub">Суверенный Портал // Proof-of-Harmony</span>
+      </div>
+    </div>
+
+    <!-- Показатели Совести и Цепи -->
+    <div class="metrics-section">
+      <div class="metric-pill conscience" title="Капли совести (опыт совместной гармоничной жизни)">
+        <span>💧</span>
+        <span>Совесть:</span>
+        <span class="val" id="metric-drops">0</span>
+      </div>
+
+      <div class="metric-pill step-pill" title="Текущая ступень Лестницы Совести">
+        <span>🧗</span>
+        <span>Ступень:</span>
+        <span class="val" id="metric-step">Бытие</span>
+      </div>
+
+      <div class="metric-pill blockchain" title="Высота проверенной цепи блоков в RocksDB">
+        <div class="pulse-dot"></div>
+        <span>Блок:</span>
+        <span class="val" id="metric-height">#0</span>
+      </div>
+
+      <div class="metric-pill" id="mempool-pill" title="Пул Лада (волеизъявления, ожидающие кристаллизации)">
+        <span>⚖️</span>
+        <span>Пул Лада:</span>
+        <span class="val" id="metric-mempool">0</span>
+      </div>
+    </div>
+
+    <!-- Профиль вольного игрока -->
+    <div class="profile-section">
+      <div class="player-badge" onclick="openAuthModal()" title="Нажмите, чтобы сменить вольного игрока">
+        <div class="player-avatar" id="avatar-initial">С</div>
+        <div class="player-name-wrap">
+          <span class="player-name" id="profile-username">Сигом</span>
+          <span class="player-key" id="profile-pubkey">0x...</span>
+        </div>
+      </div>
+      <button class="switch-player-btn" onclick="openAuthModal()">👤 Сменить</button>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       Главное Рабочее Пространство
+       ======================================================================== -->
+  <main id="main-workspace">
+
+    <!-- Выдвижная панель Древа Квестов -->
+    <aside id="tree-drawer">
+      <div class="drawer-header">
+        <span class="drawer-title">📜 Живое Древо Квестов</span>
+        <button class="drawer-close" onclick="toggleTreeDrawer()">×</button>
+      </div>
+      <div class="tree-list" id="drawer-tree-list">
+        <!-- Заполняется динамически -->
+      </div>
+    </aside>
+
+    <!-- Левая колонка: Поток Сотворчества -->
+    <section id="chat-sidebar">
+      <div id="chat-resizer"></div>
+
+      <div class="stream-header">
+        <button class="toggle-tree-btn" onclick="toggleTreeDrawer()">📜 Квесты ▾</button>
+        <div class="stream-context-info" id="stream-active-quest-title">Квест: Воля (Исток)</div>
+      </div>
+
+      <!-- Сообщения потока -->
+      <div id="stream-messages">
+        <!-- Динамические сообщения сотворцов -->
+      </div>
+
+      <!-- Панель живых символов -->
+      <div id="stream-emoji-bar">
+        <button class="emoji-btn" onclick="insertEmoji('🌿')">🌿</button>
+        <button class="emoji-btn" onclick="insertEmoji('🌳')">🌳</button>
+        <button class="emoji-btn" onclick="insertEmoji('✨')">✨</button>
+        <button class="emoji-btn" onclick="insertEmoji('🤝')">🤝</button>
+        <button class="emoji-btn" onclick="insertEmoji('🎯')">🎯</button>
+        <button class="emoji-btn" onclick="insertEmoji('💡')">💡</button>
+        <button class="emoji-btn" onclick="insertEmoji('🛠️')">🛠️</button>
+        <button class="emoji-btn" onclick="insertEmoji('❤️')">❤️</button>
+      </div>
+
+      <!-- Поле ввода волеизъявления -->
+      <div id="stream-input-area">
+        <textarea id="message-input" placeholder="Направьте вашу волю... (Shift + Enter — перенос строки)" rows="1"></textarea>
+        <button id="send-flow-btn" onclick="sendFlowMessage()">Направить</button>
+      </div>
+    </section>
+
+    <!-- Правая колонка: Холст Воли (Living Canvas) -->
+    <section id="viewport">
+      <!-- Навигация по режимам Холста -->
+      <div class="canvas-tabs">
+        <button class="canvas-tab-btn active" id="tab-btn-tree" onclick="switchCanvasTab('tree')">
+          <span>🌳</span> Живое Древо
+        </button>
+        <button class="canvas-tab-btn" id="tab-btn-veche" onclick="switchCanvasTab('veche')">
+          <span>🏛️</span> Вечевой Кон & Пул
+        </button>
+        <button class="canvas-tab-btn" id="tab-btn-artifacts" onclick="switchCanvasTab('artifacts')">
+          <span>💎</span> Плоды Души
+        </button>
+        <button class="canvas-tab-btn" id="tab-btn-blocks" onclick="switchCanvasTab('blocks')">
+          <span>⛓️</span> Летопись Блоков
+        </button>
+
+        <button class="canvas-action-btn" id="btn-forge-block" onclick="crystallizeBlock()">
+          <span>⚡</span> Кристаллизовать Блок
+        </button>
+      </div>
+
+      <!-- Панели отображения -->
+      <div class="canvas-view-container">
+
+        <!-- 1. Панель: Живое Древо -->
+        <div class="view-panel active" id="panel-tree">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 18px; color: var(--accent-emerald-bright);">🌳 Ветви Живого Древа</h2>
+            <button class="vote-btn agree" onclick="promptCreateQuest()">+ Породить Новую Ветвь</button>
+          </div>
+          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
+            Вселенная «Воля» произрастает из корневого квеста «Воля» (Исток Древа, parent_quest_id = null). Каждая новая ветвь создаётся по Ладу с утверждённым Коном и ролями Лестницы Совести.
+          </p>
+          <div class="grid-cards" id="tree-cards-container">
+            <!-- Динамические карточки квестов -->
+          </div>
+        </div>
+
+        <!-- 2. Панель: Вечевой Кон и Пул Лада -->
+        <div class="view-panel" id="panel-veche">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 18px; color: var(--accent-gold);">🏛️ Вечевой Кон и Волеизъявления</h2>
+            <span style="font-size: 12px; color: var(--text-dim);" id="veche-status-text">Консенсус Proof-of-Harmony</span>
+          </div>
+          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
+            Пул Лада (Mempool) собирает неподтвержденные волеизъявления родных. При 100% согласии («ПО ДУШЕ») блок кристаллизуется и навечно запечатывается в RocksDB.
+          </p>
+          <div class="grid-cards" id="veche-cards-container">
+            <!-- Динамические транзакции в пуле -->
+          </div>
+        </div>
+
+        <!-- 3. Панель: Плоды Души (Артефакты) -->
+        <div class="view-panel" id="panel-artifacts">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 18px; color: var(--accent-blue);">💎 Плоды Души (Артефакты)</h2>
+            <button class="vote-btn agree" onclick="promptCreateArtifact()">+ Сотворить Артефакт</button>
+          </div>
+          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
+            Плоды совместного созидания и творчества. Артефакты принадлежат авторам и могут бережно передаваться из рук в руки по согласию.
+          </p>
+          <div class="grid-cards" id="artifacts-cards-container">
+            <!-- Динамические карточки артефактов -->
+          </div>
+        </div>
+
+        <!-- 4. Панель: Летопись Блоков (RocksDB) -->
+        <div class="view-panel" id="panel-blocks">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 18px; color: var(--accent-purple);">⛓️ Несокрушимая Летопись (RocksDB)</h2>
+            <span style="font-size: 12px; color: var(--text-dim);" id="blocks-count-label">Цепь подтверждена</span>
+          </div>
+          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
+            Каждый блок запечатан подписями Ed25519 и хэшем Blake3. Хранение организовано в LSM-Tree RocksDB с бинарной сериализацией MessagePack.
+          </p>
+          <div class="grid-cards" id="blocks-cards-container">
+            <!-- Динамический список запечатанных блоков -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================
+       Врата Воли (Модальное окно смены / входа игрока)
+       ======================================================================== -->
+  <div id="auth-modal">
+    <div class="auth-card">
+      <h2 class="auth-title">🚪 Врата Воли</h2>
+      <p class="auth-sub">Выберите вольного игрока или назовитесь новым именем для входа без паролей и внешних серверов.</p>
+      
+      <div class="quick-brothers" id="quick-brothers-container">
+        <!-- Кнопки быстрого выбора: Сигом, Эйра, Ладомир -->
+      </div>
+
+      <div style="margin-top: 16px; border-top: 1px solid var(--glass-border-subtle); padding-top: 16px;">
+        <input type="text" id="new-player-input" placeholder="Новое вольное имя..." 
+               style="width: 100%; padding: 12px; border-radius: 10px; background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border-subtle); color: #fff; margin-bottom: 12px; text-align: center;">
+        <div style="display: flex; gap: 10px;">
+          <button class="vote-btn" style="flex: 1; background: rgba(255,255,255,0.08); color: #fff;" onclick="closeAuthModal()">Отмена</button>
+          <button class="vote-btn agree" style="flex: 1;" onclick="submitNewPlayer()">Войти по Ладу 🌿</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

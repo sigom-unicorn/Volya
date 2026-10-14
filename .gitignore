@@ -18,6 +18,6 @@ manifest_temp.pdf
 *.sqlite
 *.sqlite3
 *.rocksdb/
-identity.json
+identity*.json
 .pytest_cache/
 scratch*.txt

@@ -130,8 +130,15 @@ class LocalVault:
             data = json.load(f)
         return SovereignIdentity.from_dict(data)
 
-    def get_or_create_identity(self, default_username: str = "Вольный Игрок") -> SovereignIdentity:
+    def get_or_create_identity(
+        self,
+        default_username: str = "Вольный Игрок",
+        identity_file: Optional[str] = None,
+    ) -> SovereignIdentity:
         """Получить существующую идентичность или сгенерировать новую."""
+        if identity_file:
+            self.identity_path = self.vault_dir / identity_file
+
         existing = self.load_identity()
         if existing:
             return existing
