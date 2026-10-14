@@ -17,8 +17,8 @@ from portal_volya.storage.vault import LocalVault, SovereignIdentity, create_flo
 
 def test_block_store_lifecycle(tmp_path: Path):
     """Тест сохранения, индексации и восстановления блоков из BlockStore."""
-    db_file = tmp_path / "test_ledger.db"
-    store = BlockStore(db_path=db_file)
+    db_dir = tmp_path / "test_ledger_rocksdb"
+    store = BlockStore(db_path=db_dir)
 
     # 1. ensure_genesis сохраняет Блок №0
     genesis_block = store.ensure_genesis()
@@ -79,6 +79,8 @@ def test_block_store_lifecycle(tmp_path: Path):
     assert len(ledger.state.blocks) == 2
     assert kp_novice.public_hex in ledger.state.players
     assert ledger.state.players[kp_novice.public_hex].username == "Светозар"
+
+    store.close()
 
 
 def test_local_vault_lifecycle(tmp_path: Path):
