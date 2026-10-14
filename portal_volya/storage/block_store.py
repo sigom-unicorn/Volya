@@ -101,8 +101,23 @@ class BlockStore:
     def close(self) -> None:
         """Корректное закрытие дескрипторов и сброс буферов на диск."""
         if hasattr(self, "db") and self.db is not None:
-            self.db.flush(wait=True)
-            self.db.close()
+            try:
+                self.db.flush(wait=True)
+                self.db.close()
+            except Exception:
+                pass
+            finally:
+                self._cf_blocks = None
+                self._cf_index = None
+                self._cf_tx = None
+                self._cf_meta = None
+                self._h_blocks = None
+                self._h_index = None
+                self._h_tx = None
+                self._h_meta = None
+                self.db = None
+                import gc
+                gc.collect()
 
     def __enter__(self) -> BlockStore:
         return self
