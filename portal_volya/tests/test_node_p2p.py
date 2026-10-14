@@ -4,7 +4,7 @@
 Проверяет:
 1. Жизненный цикл VolyaNode: мемпул, волеизъявления, кристаллизация блоков, персистентность в RocksDB.
 2. Сетевое рукопожатие по Ed25519 (взаимная авторизация узлов).
-3. Распространение неподтвержденных транзакций через волну Gossip.
+3. Распространение неподтвержденных транзакций через Волну Потока.
 4. Распространение новых блоков и мгновенное достижение 100% консенсуса.
 5. Автоматическую синхронизацию отстающего узла (Chain Sync).
 """
@@ -103,7 +103,7 @@ async def test_p2p_network_sync_and_gossip(tmp_path: Path):
         await asyncio.sleep(0.05)  # Небольшая пауза для завершения регистрации на стороне А
         assert lad_kp.public_hex in p2p_a.peers
 
-        # 3. Тест Gossip транзакции: Сигом на узле А создает транзакцию создания артефакта
+        # 3. Тест Волны Потока транзакции: Сигом на узле А создает транзакцию создания артефакта
         tx_art = node_a.create_artifact(
             artifact_id="art_p2p_crystal_01",
             title="Кристалл Связи",
@@ -113,7 +113,7 @@ async def test_p2p_network_sync_and_gossip(tmp_path: Path):
         assert len(node_a.mempool) == 1
         assert len(node_b.mempool) == 0
 
-        # Рассылаем волну Gossip
+        # Рассылаем Волну Потока
         await p2p_a.broadcast_transaction(tx_art)
         await asyncio.sleep(0.05)
 
@@ -121,7 +121,7 @@ async def test_p2p_network_sync_and_gossip(tmp_path: Path):
         assert len(node_b.mempool) == 1
         assert node_b.mempool[0].id == tx_art.id
 
-        # 4. Тест кристаллизации и распространения блока
+        # 4. Тест кристаллизации и распространения блока через Волну Потока
         block1 = node_a.crystallize_block(
             timestamp="2026-10-14T12:15:00Z",
             signers=[sigom_kp, lad_kp],
@@ -129,7 +129,7 @@ async def test_p2p_network_sync_and_gossip(tmp_path: Path):
         assert block1 is not None
         assert node_a.height == 2
 
-        # Рассылаем блок по сети
+        # Рассылаем блок по Волне Потока
         await p2p_a.broadcast_block(block1)
         await asyncio.sleep(0.05)
 

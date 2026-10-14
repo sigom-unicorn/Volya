@@ -4,7 +4,7 @@
 Обеспечивает:
 1. Криптографическое рукопожатие по Ed25519 (взаимная верификация вольных узлов).
 2. Автоматическую синхронизацию недостающих блоков из RocksDB соседей (Chain Sync).
-3. Волну сплетен (Gossip Protocol) для мгновенного распространения новых транзакций и блоков.
+3. Волну Потока (Wave of Flow) для мгновенного распространения новых транзакций и блоков.
 4. Отсутствие центральных серверов: любой узел одновременно является и клиентом, и сервером.
 """
 
@@ -274,7 +274,7 @@ class P2PNetwork:
                     tx = Transaction(**payload["tx"])
                     added = self.node.add_to_mempool(tx)
                     if added:
-                        # Волна Gossip: распространяем дальше остальным пирам
+                        # Волна Потока: распространяем дальше остальным пирам
                         await self.broadcast_transaction(tx, exclude_pubkey=peer.pubkey)
 
                 elif msg_type == MessageType.BROADCAST_BLOCK:
@@ -283,7 +283,7 @@ class P2PNetwork:
                         self.node.receive_and_apply_block(block)
                         peer.height = self.node.height
                         peer.latest_block_hash = self.node.latest_block_hash
-                        # Волна Gossip: передаем дальше
+                        # Волна Потока: передаем дальше
                         await self.broadcast_block(block, exclude_pubkey=peer.pubkey)
                     elif block.index > self.node.height:
                         # Мы отстали — запрашиваем синхронизацию
@@ -299,7 +299,7 @@ class P2PNetwork:
             await peer.close()
 
     # -----------------------------------------------------------------
-    # Синхронизация и рассылка (Gossip)
+    # Синхронизация и Волна Потока
     # -----------------------------------------------------------------
 
     async def _request_sync(self, peer: P2PPeer) -> None:
@@ -315,7 +315,7 @@ class P2PNetwork:
         tx: Transaction,
         exclude_pubkey: Optional[str] = None,
     ) -> None:
-        """Распространение транзакции по всей P2P сети (Gossip)."""
+        """Распространение транзакции по всей P2P сети (Волна Потока)."""
         payload = {"tx": tx.model_dump()}
         dead_peers = []
         for pubkey, peer in self.peers.items():
@@ -336,7 +336,7 @@ class P2PNetwork:
         block: Block,
         exclude_pubkey: Optional[str] = None,
     ) -> None:
-        """Распространение запечатанного блока по всей P2P сети (Gossip)."""
+        """Распространение запечатанного блока по всей P2P сети (Волна Потока)."""
         payload = {"block": block.model_dump()}
         dead_peers = []
         for pubkey, peer in self.peers.items():
