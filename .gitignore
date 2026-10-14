@@ -11,8 +11,12 @@ __pycache__/
 *.log
 manifest_temp.pdf
 
-# Системные и временные файлы ОС
-.DS_Store
-Thumbs.db
-desktop.ini
-*.tmp
+# Базы данных и сокровенные ключи узла (Local Vault)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+identity.json
+.pytest_cache/
+scratch*.txt
