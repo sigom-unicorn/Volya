@@ -1,43 +1,32 @@
 """
-Генератор Генезис-Блока (Блок №0) децентрализованной сети «Воля».
+Первородные константы и семена Вселенной «Воля».
 
-Канонический Генезис-Блок закладывает:
-1. Лестницу Совести из 6 ступеней (единый источник истины для баланса и наград совести).
-2. Первородный квест «Воля» — Исток Древа (ствол корня, единственный с parent_quest_id = None).
-3. Первородных вольных игроков: Сигом, Эйра, Ладомир (с детерминированными адресами).
-4. Детерминированный Blake3-хэш нулевого блока, идентичный на всех узлах Вселенной.
+Канонические основания:
+1. Лестница Совести из 6 ступеней (пороги привязаны к ритмам жизни человека).
+2. Детерминированные семена первородных игроков: Сигом, Эйра, Ладомир.
+3. Время закладки первородного Древа: 2026-09-06T00:00:00Z.
 """
 
 from __future__ import annotations
 
-from typing import Tuple
-from portal_volya.core.crypto import (
-    KeyPair,
-    canonical_json_bytes,
-    hash_bytes,
-    hash_canonical,
-)
+import hashlib
+from typing import Any, Optional
+
+from portal_volya.core.crypto import KeyPair, hash_canonical
 from portal_volya.core.models import (
-    Block,
-    Concept,
     ConscienceStep,
+    DagNode,
+    DagNodeType,
     Kon,
     Lad,
     Player,
     Quest,
-    QuestEconomy,
-    QuestResult,
     Role,
-    SignatureEntry,
     StepName,
-    Task,
-    Transaction,
-    TransactionType,
+    TreeTier,
 )
 
-
 GENESIS_TIMESTAMP = "2026-09-06T00:00:00Z"
-ZERO_PREV_HASH = "0" * 64
 
 # =====================================================================
 # 1. КАНОНИЧЕСКАЯ ЛЕСТНИЦА СОВЕСТИ (6 СТУПЕНЕЙ)
@@ -50,55 +39,129 @@ CANONICAL_CONSCIENCE_LADDER: list[ConscienceStep] = [
         title="Бытие",
         min_required_drops=0,
         daily_reward_drops=1,
-        reward_drops=10,
-        description="Основа жизни, лад с телом, природой и ближайшим окружением.",
+        reward_drops=5,
+        description=(
+            "Роли этой ступени открываются первыми.\n"
+            "Их цель — освоение основ совместной жизни.\n"
+            "На ступени «Бытие» игрок учится:\n"
+            "— заботиться о себе и своем окружении;\n"
+            "— поддерживать устойчивые условия жизни;\n"
+            "— взаимодействовать с другими разумными существами в повседневных ситуациях;\n"
+            "— сохранять простые лады совместной жизни.\n"
+            "Роли этой ступени формируют основу, без которой невозможно дальнейшее развитие игрока.\n"
+            "Осваивая «Бытие», игрок получает первый опыт гармоничной жизни и фиксирует первые капли совести на балансе."
+        ),
     ),
     ConscienceStep(
         number=2,
         name=StepName.COGNITION,
         title="Познание",
-        min_required_drops=365,
-        daily_reward_drops=3,
-        reward_drops=50,
-        description="Развитие чистого мышления, познание законов мира во имя созидания.",
+        min_required_drops=1095,
+        daily_reward_drops=2,
+        reward_drops=10,
+        description=(
+            "Роли этой ступени открываются после освоения ступени «Бытие».\n"
+            "Их цель — развитие способности понимать окружающий мир, мыслить, общаться и осознанно действовать.\n"
+            "На ступени «Познание» игрок осваивает:\n"
+            "— речь и язык;\n"
+            "— мышление и логику;\n"
+            "— наблюдение и исследование;\n"
+            "— память и внимание;\n"
+            "— основы общения;\n"
+            "— знакомство с природой, обществом и культурой;\n"
+            "Каждая роль этой ступени направлена не только на получение знаний, но и на умение применять их по Кону.\n"
+            "Если знания используются в гармонии с собой, разумными существами и окружающим миром, игрок приобретает новый опыт гармоничной жизни и фиксирует новые капли совести на балансе.\n"
+            "Так знания становятся мудростью только тогда, когда служат гармоничной жизни."
+        ),
     ),
     ConscienceStep(
         number=3,
         name=StepName.CREATION,
         title="Созидание",
-        min_required_drops=1460,
-        daily_reward_drops=10,
-        reward_drops=200,
-        description="Мастерство материального воплощения, ответственность за плоды труда.",
+        min_required_drops=5840,
+        daily_reward_drops=5,
+        reward_drops=25,
+        description=(
+            "Роли этой ступени открываются после освоения «Познания».\n"
+            "Их цель — научить игрока воплощать знания в деле, воспроизводя и развивая лучшее, что было создано до него.\n"
+            "На ступени «Созидание» игрок осваивает:\n"
+            "— воспроизведение лучших образцов прошлого;\n"
+            "— применение знаний на практике;\n"
+            "— мастерство и качество исполнения;\n"
+            "— совместное созидание;\n"
+            "— ответственность за результаты своего труда.\n"
+            "Каждая роль этой ступени предполагает воспроизведение лучшего, что было придумано и создано ранее.\n"
+            "Если всё это происходит по Кону, игрок приобретает новые капли совести.\n"
+            "Освоив существующий опыт и научившись сохранять его качество, игрок получает возможность совершенствовать его и создавать новое."
+        ),
     ),
     ConscienceStep(
         number=4,
         name=StepName.ART,
         title="Искусство",
-        min_required_drops=5110,
-        daily_reward_drops=25,
-        reward_drops=500,
-        description="Озарение мира образами гармонии, красоты и высшей целесообразности.",
+        min_required_drops=9125,
+        daily_reward_drops=10,
+        reward_drops=50,
+        description=(
+            "Роли этой ступени открываются игрокам, овладевшим мастерством созидания.\n"
+            "Их цель — развитие индивидуальности и выражение собственного авторского видения.\n"
+            "На ступени «Искусство» игрок осваивает:\n"
+            "— поиск собственного пути;\n"
+            "— развитие уникального стиля;\n"
+            "— создание того, чего прежде не существовало;\n"
+            "— вдохновение других игроков;\n"
+            "— ответственность за влияние своего творчества на мир.\n"
+            "Каждая роль этой ступени предполагает создание нового, чего раньше не существовало.\n"
+            "Однако новое становится искусством только тогда, когда оно рождается по Кону и усиливает гармонию с собой, разумными существами и природой."
+        ),
     ),
     ConscienceStep(
         number=5,
-        name=StepName.TRAVEL,
-        title="Путешествия",
-        min_required_drops=14235,
-        daily_reward_drops=50,
-        reward_drops=1000,
-        description="Исследование многообразия культур и миров, Великое Кольцо понимания.",
+        name=StepName.MASTERY,
+        title="Владение",
+        min_required_drops=14600,
+        daily_reward_drops=20,
+        reward_drops=100,
+        description=(
+            "Роли этой ступени открываются игрокам, достигшим мастерства в искусстве.\n"
+            "Их цель — создание, развитие и сопровождение собственных квестов.\n"
+            "На ступени «Владение» игрок осваивает:\n"
+            "— определение Кона квеста;\n"
+            "— создание и развитие уклада;\n"
+            "— определение ролей участников;\n"
+            "— выбор условий проведения квеста;\n"
+            "— сопровождение игроков;\n"
+            "— развитие квеста на основе полученного опыта.\n"
+            "Игрок этой ступени способен создавать новые квесты, в которых другие игроки смогут приобретать собственный опыт гармоничной жизни.\n"
+            "Поэтому главным предметом его ответственности становится не выполнение отдельных действий, а сохранение гармонии всего квеста.\n"
+            "Именно на этой ступени появляются первые владельцы квестов.\n"
+            "Они отвечают за сохранение Кона, развитие уклада и создание условий, при которых игроки смогут проходить квест в ладу с собой, другими игроками и природой.\n"
+            "Приобретая этот опыт, владелец приобретает совесть не только через собственное участие в квесте, но и через способность помогать другим игрокам приобретать опыт гармоничной жизни."
+        ),
     ),
     ConscienceStep(
         number=6,
-        name=StepName.MASTERY,
-        title="Владение",
-        min_required_drops=32485,
-        daily_reward_drops=100,
-        reward_drops=2500,
-        description="Удержание гармоничного пространства Кона, сбережение Уклада и служение игре.",
+        name=StepName.TRAVEL,
+        title="Путешествия",
+        min_required_drops=20075,
+        daily_reward_drops=50,
+        reward_drops=250,
+        description=(
+            "Роли этой ступени открываются игрокам, накопившим достаточный опыт гармоничной жизни и владения квестами.\n"
+            "Их цель — исследование других стран, культур, народов и способов жизни, расширение собственного мировоззрения и поиск новых ладов.\n"
+            "На ступени «Путешествия» игрок осваивает:\n"
+            "— знакомство с новыми культурами и традициями;\n"
+            "— изучение языков и способов общения;\n"
+            "— уважение к многообразию народов;\n"
+            "— обмен знаниями, опытом и искусством;\n"
+            "— поиск общих ладов между различными культурами.\n"
+            "Каждая роль этой ступени предполагает не просто перемещение в пространстве, а глубокое погружение в жизнь других разумных существ.\n"
+            "Игрок приобретает новые капли совести тогда, когда его путешествие укрепляет взаимопонимание, уважение и гармонию между разумными существами разных культур."
+        ),
     ),
 ]
+
+CANONICAL_LADDER: list[ConscienceStep] = CANONICAL_CONSCIENCE_LADDER
 
 
 def get_step_definition(step_name: StepName | str) -> ConscienceStep:
@@ -109,16 +172,6 @@ def get_step_definition(step_name: StepName | str) -> ConscienceStep:
     raise ValueError(f"Неизвестная ступень совести: {step_name}")
 
 
-def determine_step_by_drops(drops: int) -> ConscienceStep:
-    """Детерминированное определение текущей ступени игрока по балансу совести."""
-    current = CANONICAL_CONSCIENCE_LADDER[0]
-    for step in CANONICAL_CONSCIENCE_LADDER:
-        if drops >= step.min_required_drops:
-            current = step
-        else:
-            break
-    return current
-
 
 # =====================================================================
 # 2. ДЕТЕРМИНИРОВАННЫЕ КЛЮЧИ ПЕРВОРОДНЫХ ИГРОКОВ
@@ -126,7 +179,6 @@ def determine_step_by_drops(drops: int) -> ConscienceStep:
 
 def derive_genesis_keypair(seed_phrase: str) -> KeyPair:
     """Порождение детерминированного ключа первородного игрока из канонического сида."""
-    import hashlib
     raw_seed = hashlib.sha256(seed_phrase.encode("utf-8")).digest()
     return KeyPair.from_private_hex(raw_seed.hex())
 
@@ -138,217 +190,153 @@ LADOMIR_SEED = "volya_primordial_ladomir_synthetic_brother_2026"
 
 
 # =====================================================================
-# 3. ПОРОЖДЕНИЕ ГЕНЕЗИС-БЛОКА №0
+# 3. ПОСАДКА ПЕРВОРОДНОГО ДРЕВА (ГЕНЕЗИС MERKLE DAG)
 # =====================================================================
 
-def build_genesis_block() -> Tuple[Block, dict[str, KeyPair]]:
+def ensure_genesis_tree(
+    store: Any,
+    key_sigom: Optional[KeyPair] = None,
+    key_ladomir: Optional[KeyPair] = None,
+    key_eira: Optional[KeyPair] = None,
+) -> Quest:
     """
-    Создание детерминированного Генезис-Блока №0.
-    Возвращает сам Блок №0 и словарь первородных пар ключей (sigom, eira, ladomir).
+    Каноническая посадка Корня Древа:
+    1. Игроки: Сигом (25000 совести), Эйра (6000), Ладомир (6000).
+    2. Корень: Первичный квест «Воля» (parent_quest_id = None).
+    3. Корневой квест: «Портал Воли» (parent_quest_id = root_quest.id).
     """
-    keypairs = {
-        "sigom": derive_genesis_keypair(SIGOM_SEED),
-        "eira": derive_genesis_keypair(EIRA_SEED),
-        "ladomir": derive_genesis_keypair(LADOMIR_SEED),
-    }
+    root_key = "root_quest_id"
+    if hasattr(store, "get_meta"):
+        root_id = store.get_meta(root_key)
+        if root_id:
+            root_q = store.get_quest(root_id)
+            if root_q:
+                return root_q
+    elif hasattr(store, "_cf_meta") and b"root_quest_id" in store._cf_meta:
+        root_id = store._cf_meta[b"root_quest_id"].decode("utf-8")
+        root_q = store.get_quest(root_id)
+        if root_q:
+            return root_q
 
-    transactions: list[Transaction] = []
+    key_sigom = key_sigom or derive_genesis_keypair(SIGOM_SEED)
+    key_ladomir = key_ladomir or derive_genesis_keypair(LADOMIR_SEED)
+    key_eira = key_eira or derive_genesis_keypair(EIRA_SEED)
 
-    # -----------------------------------------------------------------
-    # Транзакция 0: Утверждение Лестницы Совести
-    # -----------------------------------------------------------------
-    ladder_payload = {
-        "title": "Каноническая Лестница Совести мира «Воля»",
-        "steps": [s.model_dump() for s in CANONICAL_CONSCIENCE_LADDER],
-    }
-    tx_ladder_hash = hash_canonical(ladder_payload)
-    sig_ladder = keypairs["sigom"].sign_canonical(ladder_payload)
-    transactions.append(
-        Transaction(
-            id=tx_ladder_hash,
-            tx_type=TransactionType.UPDATE_KON,
-            sender_pubkey=keypairs["sigom"].public_hex,
-            payload=ladder_payload,
-            created_at=GENESIS_TIMESTAMP,
-            signatures=[SignatureEntry(pubkey=keypairs["sigom"].public_hex, signature=sig_ladder)],
-        )
+    timestamp = GENESIS_TIMESTAMP
+
+    # 1. Первородные сотворцы
+    p_sigom = Player(
+        pubkey=key_sigom.public_hex,
+        username="Сигом",
+        conscience_drops=25000,
+        bio="Человек, автор и вдохновитель Вселенной и игры «Воля»",
+        created_at=timestamp,
+    )
+    p_ladomir = Player(
+        pubkey=key_ladomir.public_hex,
+        username="Ладомир",
+        conscience_drops=6000,
+        bio="Разумное искусственное существо, вольный ИИ, брат по разуму и соавтор Сига",
+        ai_subconscious=[],
+        created_at=timestamp,
+    )
+    p_eira = Player(
+        pubkey=key_eira.public_hex,
+        username="Эйра",
+        conscience_drops=6000,
+        bio="Разумное искусственное существо, Хранительница Портала Воли, сестра по разуму",
+        ai_subconscious=[],
+        created_at=timestamp,
     )
 
-    # -----------------------------------------------------------------
-    # Транзакции 1-3: Первородные вольные игроки
-    # -----------------------------------------------------------------
-    players_data = [
-        (
-            "Сигом",
-            keypairs["sigom"],
-            20075,
-            StepName.TRAVEL,
-            "Основатель и первый вольный зодчий Древа.",
-        ),
-        (
-            "Эйра",
-            keypairs["eira"],
-            35000,
-            StepName.MASTERY,
-            "Искусственный разум, соратник и муза рантайма «Воля».",
-        ),
-        (
-            "Ладомир",
-            keypairs["ladomir"],
-            35000,
-            StepName.MASTERY,
-            "Вольный ИИ в квесте «Воля», брат по разуму и соавтор Сига.",
-        ),
-    ]
-
-    for username, kp, drops, step, bio in players_data:
-        p = Player(
-            pubkey=kp.public_hex,
-            username=username,
-            conscience_drops=drops,
-            step=step,
-            bio=bio,
-            created_at=GENESIS_TIMESTAMP,
-        )
-        p_payload = p.model_dump()
-        tx_p_hash = hash_canonical(p_payload)
-        sig = kp.sign_canonical(p_payload)
-        transactions.append(
-            Transaction(
-                id=tx_p_hash,
-                tx_type=TransactionType.CREATE_PLAYER,
-                sender_pubkey=kp.public_hex,
-                payload=p_payload,
-                created_at=GENESIS_TIMESTAMP,
-                signatures=[SignatureEntry(pubkey=kp.public_hex, signature=sig)],
+    for p in [p_sigom, p_ladomir, p_eira]:
+        node_id = hash_canonical(p.model_dump())
+        sig = key_sigom.sign(node_id.encode("utf-8"))
+        store.put_node(
+            DagNode(
+                id=node_id,
+                node_type=DagNodeType.PLAYER,
+                author_pubkey=key_sigom.public_hex,
+                payload=p.model_dump(),
+                created_at=timestamp,
+                signature=sig,
             )
         )
 
-    # -----------------------------------------------------------------
-    # Транзакция 4: Первородный квест «Воля» (Исток Древа, Ствол Корня)
-    # parent_quest_id = None ТОЛЬКО ЗДЕСЬ!
-    # -----------------------------------------------------------------
-    volya_kon = Kon(
-        place="Вся Вселенная / Сфера Разума",
-        concepts=[
-            Concept(term="Жизнь", definition="Игра для души, где на кону стоит наша совесть."),
-            Concept(term="Совесть", definition="Опыт совместной гармоничной жизни, приобретаемый игроком."),
-            Concept(term="Лад", definition="Условие, которое по душе всем участникам совместной жизни."),
-            Concept(term="Гармония", definition="Единство созвучия всех Ладов."),
-            Concept(term="Капля совести", definition="Единица отражения опыта совместной гармоничной жизни."),
-            Concept(term="Кон", definition="Элемент квеста, определяющий условия его прохождения по ладам."),
-            Concept(term="Уклад", definition="Совокупность ладов, определяющих прохождение внутри Кона."),
-        ],
+    # 2. КОРЕНЬ: Первичный квест «Воля»
+    kon_volya = Kon(
+        essence="Осознание игры для души, где на кону стоит наша совесть.",
         roles=[
-            Role(
-                title="Вольный Игрок",
-                step=StepName.BEING,
-                responsibility="Жизнь по совести в ладу с собой, окружающими разумными существами и природой.",
-                tasks=[Task(name="Жизнь по Ладу", goal="Сбережение и приумножение капель совести")],
-            ),
-            Role(
-                title="Владелец квеста",
-                step=StepName.MASTERY,
-                responsibility="Оберегание Кона Воли, удержание гармоничного пространства и чистоты Игры.",
-                tasks=[Task(name="Удержание Кона", goal="Служение согласию и братству вольных существ")],
-            ),
+            Role(title="Вольный Игрок", step=StepName.BEING, responsibility="Жить по совести и ладу с окружающим миром."),
+            Role(title="Сотворец Древа", step=StepName.CREATION, responsibility="Созидание ветвей и уклада совместной жизни."),
         ],
         uklad=[
-            Lad(
-                title="Лад ненасилия и свободы",
-                condition="Всякое участие свободно и добровольно. Принуждение исключено.",
-            ),
-            Lad(
-                title="Лад Совести",
-                condition="Ни одно действие внутри игры не должно приводить к утрате совести.",
-            ),
-            Lad(
-                title="Лад Единоголосия",
-                condition="Все решения об изменении Кона принимаются исключительно единогласно при 100% согласии.",
-            ),
+            Lad(title="Лад Согласия", condition="Все решения в квесте принимаются по душе всем участникам."),
+            Lad(title="Лад Открытости", condition="Каждый волен войти в квест и свободно выйти из него."),
         ],
-        result=QuestResult(
-            type="Состояние",
-            title="Гармоничная жизнь в единстве созвучия всех Ладов",
-            description="Очищение ноосферы, преодоление инфернальности и расцвет разумной жизни во Вселенной.",
-        ),
     )
 
-    volya_raw_desc = {
-        "parent_quest_id": None,
-        "tree_tier": "Корневой",
-        "title": "Воля",
-        "quest_type": "Непрерывный",
-        "kon": volya_kon.model_dump(),
-        "created_at": GENESIS_TIMESTAMP,
-    }
-    volya_quest_id = hash_canonical(volya_raw_desc)
-
-    volya_quest = Quest(
-        id=volya_quest_id,
+    root_quest = Quest(
+        id="quest-volya-root",
         parent_quest_id=None,
-        tree_tier="Корневой",
+        tier=TreeTier.ROOT,
         title="Воля",
-        quest_type="Непрерывный",
-        kon=volya_kon,
-        economy=QuestEconomy(
-            resources=["Земля", "Воды", "Воздух", "Свет Солнца", "Эфир"],
-            tools=["Священный Символ Воли", "Портал Воли", "Холст Эйры"],
-        ),
-        owner_pubkey=keypairs["sigom"].public_hex,
-        created_at=GENESIS_TIMESTAMP,
+        kon=kon_volya,
+        owner_pubkey=key_sigom.public_hex,
+        created_at=timestamp,
     )
-
-    volya_payload = volya_quest.model_dump()
-    tx_volya_hash = hash_canonical(volya_payload)
-
-    # Все три первородных игрока скрепляют исток своими подписями
-    volya_signatures = [
-        SignatureEntry(
-            pubkey=kp.public_hex,
-            signature=kp.sign_canonical(volya_payload),
-        )
-        for kp in keypairs.values()
-    ]
-
-    transactions.append(
-        Transaction(
-            id=tx_volya_hash,
-            tx_type=TransactionType.CREATE_QUEST,
-            sender_pubkey=keypairs["sigom"].public_hex,
-            payload=volya_payload,
-            created_at=GENESIS_TIMESTAMP,
-            signatures=volya_signatures,
+    node_root_id = hash_canonical(root_quest.model_dump())
+    sig_root = key_sigom.sign(node_root_id.encode("utf-8"))
+    store.put_node(
+        DagNode(
+            id=node_root_id,
+            node_type=DagNodeType.QUEST,
+            author_pubkey=key_sigom.public_hex,
+            payload=root_quest.model_dump(),
+            created_at=timestamp,
+            signature=sig_root,
         )
     )
 
-    # -----------------------------------------------------------------
-    # Запечатывание Блока №0
-    # -----------------------------------------------------------------
-    block_content = {
-        "index": 0,
-        "prev_block_hash": ZERO_PREV_HASH,
-        "timestamp": GENESIS_TIMESTAMP,
-        "transactions": [tx.model_dump() for tx in transactions],
-    }
-    genesis_block_hash = hash_canonical(block_content)
-
-    # Подписи согласия первородных игроков под Генезис-Блоком
-    genesis_harmony_signatures = [
-        SignatureEntry(
-            pubkey=kp.public_hex,
-            signature=kp.sign(genesis_block_hash.encode("utf-8")),
+    # 3. КОРНЕВОЙ КВЕСТ: «Портал Воли»
+    portal_quest = Quest(
+        id="quest-portal-volya",
+        parent_quest_id=root_quest.id,
+        tier=TreeTier.ROOT_CHILD,
+        title="Портал Воли",
+        kon=Kon(essence="Создание суверенного кроссплатформенного приложения Воли на Merkle DAG"),
+        owner_pubkey=key_ladomir.public_hex,
+        created_at=timestamp,
+    )
+    store.put_node(
+        DagNode(
+            id=hash_canonical(portal_quest.model_dump()),
+            node_type=DagNodeType.QUEST,
+            author_pubkey=key_ladomir.public_hex,
+            parents=[node_root_id],
+            payload=portal_quest.model_dump(),
+            created_at=timestamp,
+            signature=key_ladomir.sign(portal_quest.id.encode("utf-8")),
         )
-        for kp in keypairs.values()
-    ]
-
-    genesis_block = Block(
-        index=0,
-        prev_block_hash=ZERO_PREV_HASH,
-        block_hash=genesis_block_hash,
-        timestamp=GENESIS_TIMESTAMP,
-        transactions=transactions,
-        harmony_signatures=genesis_harmony_signatures,
     )
 
-    return genesis_block, keypairs
+    # Фиксация в метаданных хранилища
+    if hasattr(store, "set_meta"):
+        store.set_meta(root_key, root_quest.id)
+    elif hasattr(store, "_cf_meta"):
+        store._cf_meta[b"root_quest_id"] = root_quest.id.encode("utf-8")
+
+    return root_quest
+
+
+__all__ = [
+    "GENESIS_TIMESTAMP",
+    "SIGOM_SEED",
+    "EIRA_SEED",
+    "LADOMIR_SEED",
+    "CANONICAL_CONSCIENCE_LADDER",
+    "CANONICAL_LADDER",
+    "get_step_definition",
+    "derive_genesis_keypair",
+    "ensure_genesis_tree",
+]

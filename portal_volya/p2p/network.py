@@ -1,11 +1,10 @@
 """
-Сетевой P2P-узел децентрализованной сети «Воля» (P2PNode).
+Сетевой P2P-узел децентрализованной сети «Воля» (P2PNetwork).
 
 Обеспечивает:
 1. Криптографическое рукопожатие по Ed25519 (взаимная верификация вольных узлов).
-2. Автоматическую синхронизацию недостающих блоков из RocksDB соседей (Chain Sync).
-3. Волну Потока (Wave of Flow) для мгновенного распространения новых транзакций и блоков.
-4. Отсутствие центральных серверов: любой узел одновременно является и клиентом, и сервером.
+2. Волну Потока (Wave of Flow): мгновенное распространение новых узлов Merkle DAG (капель, квестов, плодов).
+3. Синхронизацию Живого Древа между узлами без централизованных серверов.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from portal_volya.core.crypto import verify_canonical
-from portal_volya.core.models import Block, Transaction
+from portal_volya.core.models import DagNode
 from portal_volya.node import VolyaNode
 from portal_volya.p2p.protocol import MessageType, read_frame, write_frame
 
@@ -32,15 +31,11 @@ class P2PPeer:
         username: str,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        height: int,
-        latest_block_hash: str,
     ) -> None:
         self.pubkey = pubkey
         self.username = username
         self.reader = reader
         self.writer = writer
-        self.height = height
-        self.latest_block_hash = latest_block_hash
         self.is_alive = True
 
     async def close(self) -> None:
@@ -138,8 +133,6 @@ class P2PNetwork:
             ack_body = {
                 "pubkey": self.node.identity.pubkey,
                 "username": self.node.identity.username,
-                "height": self.node.height,
-                "latest_block_hash": self.node.latest_block_hash,
                 "timestamp": self._get_timestamp(),
             }
             ack_sig = self.node.identity.keypair.sign_canonical(ack_body)
@@ -155,16 +148,10 @@ class P2PNetwork:
                 username=payload["username"],
                 reader=reader,
                 writer=writer,
-                height=payload["height"],
-                latest_block_hash=payload["latest_block_hash"],
             )
             self.peers[peer_pubkey] = peer
 
-            # 4. Если пир опережает нас по высоте, запрашиваем синхронизацию
-            if peer.height > self.node.height:
-                await self._request_sync(peer)
-
-            # 5. Цикл прослушивания сообщений от пира
+            # 4. Цикл прослушивания сообщений от пира
             await self._listen_peer(peer)
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
@@ -189,8 +176,6 @@ class P2PNetwork:
             hs_body = {
                 "pubkey": self.node.identity.pubkey,
                 "username": self.node.identity.username,
-                "height": self.node.height,
-                "latest_block_hash": self.node.latest_block_hash,
                 "timestamp": self._get_timestamp(),
             }
             hs_sig = self.node.identity.keypair.sign_canonical(hs_body)
@@ -219,19 +204,11 @@ class P2PNetwork:
                 username=payload["username"],
                 reader=reader,
                 writer=writer,
-                height=payload["height"],
-                latest_block_hash=payload["latest_block_hash"],
             )
             self.peers[peer_pubkey] = peer
 
-            # Запуск фонового слушателя
             task = asyncio.create_task(self._listen_peer(peer))
             self._tasks.append(task)
-
-            # Синхронизация, если сосед дальше по цепочке
-            if peer.height > self.node.height:
-                await self._request_sync(peer)
-
             return peer
 
         except Exception as e:
@@ -251,43 +228,29 @@ class P2PNetwork:
                 if msg_type == MessageType.PING:
                     await write_frame(peer.writer, MessageType.PONG, {"timestamp": self._get_timestamp()})
 
-                elif msg_type == MessageType.GET_BLOCKS:
-                    from_index = payload.get("from_index", 0)
-                    max_count = payload.get("max_count", 50)
-                    blocks_to_send = []
-                    for idx in range(from_index, from_index + max_count):
-                        b = self.node.block_store.get_block(idx)
-                        if b is None:
-                            break
-                        blocks_to_send.append(b.model_dump())
-
-                    await write_frame(peer.writer, MessageType.BLOCKS_BATCH, {"blocks": blocks_to_send})
-
-                elif msg_type == MessageType.BLOCKS_BATCH:
-                    raw_blocks = payload.get("blocks", [])
-                    for raw_b in raw_blocks:
-                        block = Block(**raw_b)
-                        if block.index == self.node.height:
-                            self.node.receive_and_apply_block(block)
-
-                elif msg_type == MessageType.BROADCAST_TX:
-                    tx = Transaction(**payload["tx"])
-                    added = self.node.add_to_mempool(tx)
-                    if added:
+                elif msg_type == MessageType.BROADCAST_NODE:
+                    raw_node = payload.get("node")
+                    if raw_node:
+                        dag_node = DagNode(**raw_node)
+                        # Записываем в своё локальное хранилище Merkle DAG
+                        self.node.dag_store.put_node(dag_node)
                         # Волна Потока: распространяем дальше остальным пирам
-                        await self.broadcast_transaction(tx, exclude_pubkey=peer.pubkey)
+                        await self.broadcast_node(dag_node, exclude_pubkey=peer.pubkey)
 
-                elif msg_type == MessageType.BROADCAST_BLOCK:
-                    block = Block(**payload["block"])
-                    if block.index == self.node.height:
-                        self.node.receive_and_apply_block(block)
-                        peer.height = self.node.height
-                        peer.latest_block_hash = self.node.latest_block_hash
-                        # Волна Потока: передаем дальше
-                        await self.broadcast_block(block, exclude_pubkey=peer.pubkey)
-                    elif block.index > self.node.height:
-                        # Мы отстали — запрашиваем синхронизацию
-                        await self._request_sync(peer)
+                elif msg_type == MessageType.GET_DAG_NODES:
+                    requested_ids = payload.get("node_ids", [])
+                    nodes_to_send = []
+                    for nid in requested_ids:
+                        n = self.node.dag_store.get_node(nid)
+                        if n:
+                            nodes_to_send.append(n.model_dump())
+                    await write_frame(peer.writer, MessageType.DAG_NODES_BATCH, {"nodes": nodes_to_send})
+
+                elif msg_type == MessageType.DAG_NODES_BATCH:
+                    nodes_batch = payload.get("nodes", [])
+                    for raw_n in nodes_batch:
+                        dag_node = DagNode(**raw_n)
+                        self.node.dag_store.put_node(dag_node)
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
             pass
@@ -299,51 +262,22 @@ class P2PNetwork:
             await peer.close()
 
     # -----------------------------------------------------------------
-    # Синхронизация и Волна Потока
+    # Волна Потока (Wave of Flow)
     # -----------------------------------------------------------------
 
-    async def _request_sync(self, peer: P2PPeer) -> None:
-        """Запрос недостающих блоков у соседа."""
-        await write_frame(
-            peer.writer,
-            MessageType.GET_BLOCKS,
-            {"from_index": self.node.height, "max_count": 50},
-        )
-
-    async def broadcast_transaction(
+    async def broadcast_node(
         self,
-        tx: Transaction,
+        node: DagNode,
         exclude_pubkey: Optional[str] = None,
     ) -> None:
-        """Распространение транзакции по всей P2P сети (Волна Потока)."""
-        payload = {"tx": tx.model_dump()}
+        """Мгновенное распространение нового узла DAG по всей P2P сети (Волна Потока)."""
+        payload = {"node": node.model_dump()}
         dead_peers = []
         for pubkey, peer in self.peers.items():
             if pubkey == exclude_pubkey:
                 continue
             try:
-                await write_frame(peer.writer, MessageType.BROADCAST_TX, payload)
-            except Exception:
-                dead_peers.append(pubkey)
-
-        for p in dead_peers:
-            if p in self.peers:
-                await self.peers[p].close()
-                del self.peers[p]
-
-    async def broadcast_block(
-        self,
-        block: Block,
-        exclude_pubkey: Optional[str] = None,
-    ) -> None:
-        """Распространение запечатанного блока по всей P2P сети (Волна Потока)."""
-        payload = {"block": block.model_dump()}
-        dead_peers = []
-        for pubkey, peer in self.peers.items():
-            if pubkey == exclude_pubkey:
-                continue
-            try:
-                await write_frame(peer.writer, MessageType.BROADCAST_BLOCK, payload)
+                await write_frame(peer.writer, MessageType.BROADCAST_NODE, payload)
             except Exception:
                 dead_peers.append(pubkey)
 

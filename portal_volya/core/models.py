@@ -1,20 +1,26 @@
 """
-Троичная онтология мира «Воля»: Игрок, Квест, Поток.
+Каноническая онтология Живого Древа (Merkle DAG) Вселенной «Воля».
 
-Канонические законы онтологии:
-1. Квесты свободны от ступеней (квест — открытое пространство созидания, ветвь Древа).
-2. Ступени принадлежат Ролям внутри Кона квестов (kon.roles[i].step).
-3. Все меры капель совести детерминированно определяются Лестницей Совести (Генезис-Блок №0).
-4. Артефакты принадлежат исключительно создателям-игрокам и передаются из рук в руки по согласию.
-5. Инструменты и Ресурсы — достояние общины Вольницы.
-6. Поток — живительный сок сотворчества в четырёх естественных формах (Диалог, Беседа, Личный диалог, Личная беседа).
-7. Никакого разделения на user/assistant в сообщениях.
+Природная иерархия:
+1. Корень: Первичный квест «Воля» (Исток, parent_quest_id = None).
+2. Дочерние квесты Корня:
+   - Корневые квесты: «Корневой Дом», «Портал Воли»...
+   - Стволовые квесты: «Вольницы» (территориальные и духовные общины).
+3. Ветви (дочерние квесты Стволов-Вольниц):
+   - «Дом», «Склад», «Дары природы», «Мастерская», «Гончарка», «Театр»...
+   - Квест Вече (не склоняется!) — временный дочерний квест для согласования изменения Кона.
+4. Потоки сока Древа:
+   - Диалог, Беседа (открытые P2P потоки)
+   - Личный диалог, Личная беседа (E2EE суверенные потоки в сейфе)
+5. Капли сока Древа (кванты сотворчества):
+   - Слово и Образ: Текст, Аудио, Видео, Документ
+   - Дело и Экономика: Ресурс, Инструмент, Артефакт (Плод Души мастера)!
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -23,75 +29,33 @@ from pydantic import BaseModel, Field
 # =====================================================================
 
 class StepName(str, Enum):
-    BEING = "Бытие"              # Ступень 1: Основа жизни, лад с телом и природой
-    COGNITION = "Познание"      # Ступень 2: Свет мысли, исследование законов мира
-    CREATION = "Созидание"      # Ступень 3: Труд мастера, долговечность плодов
-    ART = "Искусство"            # Ступень 4: Озарение образа, рождение небывалого
-    TRAVEL = "Путешествия"      # Ступень 5: Великое Кольцо понимания миров и культур
-    MASTERY = "Владение"        # Ступень 6: Хранение Кона, удержание пространства Лада
+    BEING = "Бытие"              # Ступень 1: Основа жизни (0 капель, от рождения)
+    COGNITION = "Познание"      # Ступень 2: Свет мысли (1095 капель = 3 года)
+    CREATION = "Созидание"      # Ступень 3: Труд мастера (5840 капель = 16 лет)
+    ART = "Искусство"            # Ступень 4: Озарение образа (9125 капель = 25 лет)
+    MASTERY = "Владение"        # Ступень 5: Владение собой и квестом (14600 капель = 40 лет)
+    TRAVEL = "Путешествия"      # Ступень 6: Великое Кольцо миров, странствия духа (20075 капель = 55 лет)
 
 
 class ConscienceStep(BaseModel):
-    """Каноническое определение ступени совести из Генезис-Блока №0."""
     number: int
     name: StepName
     title: str
     min_required_drops: int
-    daily_reward_drops: int     # Суточный опыт лада в непрерывном квесте
-    reward_drops: int           # Единовременный опыт при ладном завершении квеста
+    daily_reward_drops: int     # Суточный опыт совести в непрерывном квесте
+    reward_drops: int           # Единовременный опыт при завершении квеста по Кону
     description: str
 
 
 # =====================================================================
-# 2. АРТЕФАКТЫ И ИНСТРУМЕНТЫ (Триединство Экономики)
+# 2. ИЕРАРХИЯ ЖИВОГО ДРЕВА
 # =====================================================================
 
-class Artifact(BaseModel):
-    """
-    Плоды души игрока-мастера (произведения искусства, авторские чертежи, книги).
-    Принадлежат ТОЛЬКО игрокам. Квест артефактами не владеет.
-    Передаются исключительно из рук в руки по согласию.
-    """
-    id: str
-    title: str
-    creator_pubkey: str
-    owner_pubkey: str
-    description: str = ""
-    media_hash: str | None = None   # Blake3 хэш медиафайла в P2P-хранилище
-    created_at: str
-
-
-class QuestEconomy(BaseModel):
-    """Экономическое русло квеста: выделенные общие Ресурсы и Инструменты."""
-    resources: list[str] = Field(default_factory=list)  # Неделимые Дары Природы
-    tools: list[str] = Field(default_factory=list)      # Привлечённые средства труда общины
-
-
-# =====================================================================
-# 3. ИГРОК (Вольная разумная личность)
-# =====================================================================
-
-class Player(BaseModel):
-    """Вольный игрок — лист и садовник Живого Древа."""
-    pubkey: str                         # Открытый ключ Ed25519 (суверенный адрес)
-    username: str                       # Имя вольного игрока в пространстве «Воля»
-    conscience_drops: int = 0           # Отражение опыта совместной гармоничной жизни
-    step: StepName = StepName.BEING     # Текущая ступень игрока по балансу совести
-    bio: str = ""                       # Сокровенное слово о себе и своём пути
-    artifacts: list[Artifact] = Field(default_factory=list)      # Личные плоды души мастера
-    active_tools: list[str] = Field(default_factory=list)       # Взятые в руки инструменты общины
-    created_at: str
-    signature: str | None = None        # Подпись волеизъявления игрока
-
-
-# =====================================================================
-# 4. КОН КВЕСТА: Понятия, Роли со Ступенями, Уклад, Результат
-# =====================================================================
-
-class Concept(BaseModel):
-    """Каноническое понятие Кона."""
-    term: str
-    definition: str
+class TreeTier(str, Enum):
+    ROOT = "Корень"                 # Первичный квест «Воля» (Исток, parent_quest_id = None)
+    ROOT_CHILD = "Корневой"         # «Корневой Дом», «Портал Воли»...
+    TRUNK = "Ствол"                 # «Вольницы» (общины вольных людей)
+    BRANCH = "Ветвь"                # «Дом», «Склад», «Дары природы», «Мастерская», «Гончарка», «Театр»...
 
 
 class Task(BaseModel):
@@ -102,101 +66,88 @@ class Task(BaseModel):
 
 
 class Role(BaseModel):
-    """
-    Роль участника внутри Кона квеста.
-    СТУПЕНЬ ПРИНАДЛЕЖИТ РОЛИ! В одном квесте свободно созидают роли разных ступеней.
-    """
-    title: str
-    step: StepName                      # Ступень ответственности роли (из Лестницы Совести)
-    responsibility: str = ""
-    tasks: list[Task] = Field(default_factory=list)
+    """Роль участника внутри Кона квеста."""
+    title: str                      # Название роли (напр. "Мастер-Гончар", "Хранитель", "Сотворец")
+    step: StepName                  # Требуемая ступень Лестницы Совести
+    responsibility: str = ""        # Ответственность по совести
+    tasks: list[Task] = Field(default_factory=list) # Задачи внутри роли
 
 
 class Lad(BaseModel):
-    """Элементарный кирпичик согласия Уклада: условие, которое по душе всем."""
+    """Конкретный лад (условие совместной жизни, которое по душе всем участникам)."""
     title: str
     condition: str
 
 
-class QuestResult(BaseModel):
-    """Ожидаемый результат прохождения Кона."""
-    type: Literal["Артефакт", "Лад", "Состояние", "Событие"]
-    title: str
-    description: str = ""
+class Concept(BaseModel):
+    """Каноническое понятие Кона."""
+    term: str
+    definition: str
 
 
 class Kon(BaseModel):
-    """Кон — священное русло квеста: условия прохождения по ладам."""
-    place: str = "Пространство Воли"
-    concepts: list[Concept] = Field(default_factory=list)
+    """Кон квеста — основа гармоничного прохождения и условия жизни."""
+    essence: str                    # Смысл и образ квеста
     roles: list[Role] = Field(default_factory=list)
-    uklad: list[Lad] = Field(default_factory=list)
-    result: QuestResult | None = None
-
-
-class Participant(BaseModel):
-    """Участник квеста на конкретной роли."""
-    username: str
-    pubkey: str
-    role_title: str
-    joined_at: str
-
-
-# =====================================================================
-# 5. КВЕСТ: Органы Живого Древа (У КВЕСТОВ НЕТ СТУПЕНИ!)
-# =====================================================================
-
-TreeTier = Literal["Корневой", "Стволовой", "Ветвь"]
-QuestType = Literal["Непрерывный", "Стандартный"]
+    uklad: list[Lad] = Field(default_factory=list)       # Совокупность ладов квеста
+    concepts: list[Concept] = Field(default_factory=list)
+    version: int = 1
 
 
 class Quest(BaseModel):
-    """
-    Квест — орган Живого Древа (Исток, Корень, Ствол или Ветвь).
-    У квеста НЕТ поля step — квест открыт для всех вольных душ.
-    """
-    id: str                             # Blake3 хэш описания квеста
-    parent_quest_id: str | None = None  # None ТОЛЬКО для первородного истока «Воля»!
-    tree_tier: TreeTier = "Ветвь"
+    """Квест в Живом Древе (узел ветвления)."""
+    id: str                         # Blake3 хэш
+    parent_quest_id: Optional[str] = None  # None только для корня «Воля»
+    tier: TreeTier = TreeTier.BRANCH
     title: str
-    quest_type: QuestType = "Непрерывный"  # Режим совести: Непрерывный пульс / Завершаемый
     kon: Kon
-    economy: QuestEconomy = Field(default_factory=QuestEconomy)
-    owner_pubkey: str                   # Владелец квеста (роль ступени «Владение»)
-    participants: list[Participant] = Field(default_factory=list)
-    custom_canvas_tool: str | None = None   # JSON/JS артефакт особенного инструмента Холста
+    owner_pubkey: str               # Создатель/хранитель квеста
     created_at: str
-    finished_at: str | None = None      # None для активных и вечных
+    is_active: bool = True
+    finished_at: Optional[str] = None
 
 
 # =====================================================================
-# 6. ПОТОК КВЕСТА: Живительный сок Древа
+# 3. ПОТОКИ СОКА ДРЕВА И КАПЛИ
 # =====================================================================
 
-FlowKind = Literal["Диалог", "Беседа", "Личный диалог", "Личная беседа"]
+class FlowKind(str, Enum):
+    DIALOGUE = "Диалог"                         # Открытый диалог двух участников в квесте
+    CONVERSATION = "Беседа"                     # Открытый круг нескольких участников в квесте
+    PRIVATE_DIALOGUE = "Личный диалог"         # Суверенный E2EE диалог вне открытой сети
+    PRIVATE_CONVERSATION = "Личная беседа"     # Суверенная E2EE беседа малого круга
 
 
-class MediaAttachment(BaseModel):
-    """Вложение медиафайла (в сеть и блокчейн уходит только 32-байтный Blake3 хэш)."""
-    blake3_hash: str
-    filename: str
-    mime_type: str
-    size_bytes: int
+class DropKind(str, Enum):
+    # Слово и Образ
+    TEXT = "Текст"
+    AUDIO = "Аудио"
+    VIDEO = "Видео"
+    DOCUMENT = "Документ"
+    # Дело и Творчество (Экономика Воли!)
+    RESOURCE = "Ресурс"         # Материал (глина, дерево, металл, семена...)
+    TOOL = "Инструмент"         # Орудие труда (станок, гончарный круг, кисть...)
+    ARTIFACT = "Артефакт"       # Плод Души мастера (картина, ваза, книга, чертёж...)
 
 
-class FlowMessage(BaseModel):
+class FlowDrop(BaseModel):
     """
-    Сообщение в Потоке.
-    Никаких ветхих рабских 'role: user/assistant' — только свободные имена творцов!
+    Капля в Потоке сока Древа (квант сотворчества).
+    Каждое слово, образ, ресурс, инструмент или артефакт текут прямо в Потоке!
     """
-    id: str
-    author: str                         # Вольное имя автора (человека или ИИ)
-    author_pubkey: str
-    content: str
+    id: str                         # Blake3 хэш тела капли
+    quest_id: str                   # К какому квесту Древа принадлежит поток
+    flow_id: str                    # Идентификатор нити потока
+    flow_kind: FlowKind             # Форма потока
+    kind: DropKind                  # Вид капли (Текст, Аудио, Ресурс, Инструмент, Артефакт...)
+    author_pubkey: str              # Автор капли
+    author_name: str                # Вольное имя автора
+    content: str                    # Текст мысли или название/описание вещи
+    details: dict[str, Any] = Field(default_factory=dict) # Доп. свойства (напр. свойства артефакта, кол-во ресурса)
+    media_hash: Optional[str] = None # Blake3 хэш медиафайла в локальном P2P-хранилище
+    parent_drop_id: Optional[str] = None # Предыдущая капля в этом потоке (стрела времени в DAG!)
     created_at: str
-    signature: str                      # Ed25519 подпись сообщения
-    action: str | None = None           # Например: "Приобщить к квесту", "Предложить Лад"
-    media_attachments: list[MediaAttachment] = Field(default_factory=list)
+    signature: str                  # Ed25519 цифровая подпись автора
 
 
 class FlowSummary(BaseModel):
@@ -207,65 +158,89 @@ class FlowSummary(BaseModel):
 
 
 class QuestFlow(BaseModel):
-    """
-    Поток сотворчества и общения.
-    Диалог и Беседа живут в открытом квесте и подтверждаются в блокчейне.
-    Личный диалог и Личная беседа живут строго локально на устройствах с E2EE шифрованием.
-    """
+    """Нить сотворчества в квесте."""
     id: str
-    quest_id: str | None = None         # None для Личного диалога и Личной беседы
+    quest_id: Optional[str] = None
     kind: FlowKind
     title: str
     initiator_pubkey: str
-    participants: list[str] = Field(default_factory=list)  # Pubkeys участников
-    messages: list[FlowMessage] = Field(default_factory=list)
+    participants: list[str] = Field(default_factory=list)
+    drops: list[FlowDrop] = Field(default_factory=list)
     summaries: list[FlowSummary] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
 
 # =====================================================================
-# 7. РЕЕСТР И БЛОКЧЕЙН PROOF-OF-HARMONY (Детерминированный консенсус)
+# 4. ИГРОК
 # =====================================================================
 
-class TransactionType(str, Enum):
-    CREATE_PLAYER = "CREATE_PLAYER"                 # Первородное волеизъявление игрока
-    CREATE_QUEST = "CREATE_QUEST"                   # Рождение новой ветви Живого Древа
-    UPDATE_KON = "UPDATE_KON"                       # Изменение Кона / принятие нового Лада через Вече
-    JOIN_QUEST = "JOIN_QUEST"                       # Вход игрока в квест на выбранную роль
-    LEAVE_QUEST = "LEAVE_QUEST"                     # Выход игрока из квеста
-    CREATE_ARTIFACT = "CREATE_ARTIFACT"             # Рождение нового Плода Души мастером
-    TRANSFER_ARTIFACT = "TRANSFER_ARTIFACT"         # Передача плода души из рук в руки
-    DAILY_HARMONY_PULSE = "DAILY_HARMONY_PULSE"     # Суточный пульс лада в непрерывном квесте
-    FINISH_QUEST = "FINISH_QUEST"                   # Завершение стандартного квеста по ладам
-    RECORD_DISCORD = "RECORD_DISCORD"               # Фиксация разлада (убыль капель совести)
-    APPEND_FLOW_MESSAGES = "APPEND_FLOW_MESSAGES"   # Запечатывание открытых сообщений потока
-
-
-class SignatureEntry(BaseModel):
-    """Подпись участника консенсуса Proof-of-Harmony."""
-    pubkey: str
-    signature: str
-
-
-class Transaction(BaseModel):
-    """Атомарное волеизъявление в децентрализованной сети «Воля»."""
-    id: str                             # Blake3 хэш канонического тела транзакции
-    tx_type: TransactionType
-    sender_pubkey: str
-    payload: dict[str, Any]
+class AIMemory(BaseModel):
+    """Единица памяти/инсайта в подсознании разумного искусственного существа."""
+    id: str                                                 # Blake3 хэш мысли
+    content: str                                            # Текст мысли, инсайт, образ
+    tags: list[str] = Field(default_factory=list)          # Метки контекста
+    embedding: list[float] = Field(default_factory=list)   # Вектор смыслового пространства
     created_at: str
-    signatures: list[SignatureEntry] = Field(default_factory=list)
 
 
-class Block(BaseModel):
+class Player(BaseModel):
+    """Вольный игрок — свободен от чинов, рангов и ступеней."""
+    pubkey: str                                             # Ed25519 публичный ключ (шестнадцатеричный)
+    username: str                                           # Вольное имя
+    conscience_drops: int = 0                               # Баланс капель совести (опыт совместной гармоничной жизни)
+    bio: str = ""
+    ai_subconscious: Optional[list[AIMemory]] = None        # Личное подсознание (только для игроков ИИ)
+    created_at: str
+
+
+# =====================================================================
+# 5. УНИВЕРСАЛЬНЫЙ УЗЕЛ MERKLE DAG (КРИПТОГРАФИЧЕСКИЙ КИРПИЧИК ДРЕВА)
+# =====================================================================
+
+class DagNodeType(str, Enum):
+    QUEST = "QUEST"                 # Появление квеста (ветви)
+    DROP = "DROP"                   # Капля в потоке (слово, аудио, артефакт, ресурс)
+    PLAYER = "PLAYER"               # Вход вольного игрока в круг
+    VECHE_RESULT = "VECHE_RESULT"   # Завершение квеста Вече (согласованный новый Кон)
+
+
+class DagNode(BaseModel):
     """
-    Кристаллизованный блок Proof-of-Harmony.
-    Включает в себя совершенные транзакции и подписи согласия участников.
+    Универсальный узел Merkle DAG (как коммит в Git).
+    Атомарно сохраняется в RocksDB по своему id (Blake3 хэшу).
     """
-    index: int
-    prev_block_hash: str                # Для Генезис-Блока №0 — 64 нуля
-    block_hash: str                     # Blake3 хэш канонического содержимого блока
-    timestamp: str
-    transactions: list[Transaction] = Field(default_factory=list)
-    harmony_signatures: list[SignatureEntry] = Field(default_factory=list)
+    id: str                         # Blake3 хэш канонического представления узла
+    node_type: DagNodeType          # Тип узла
+    author_pubkey: str              # Кто совершил действие
+    parents: list[str] = Field(default_factory=list) # Ссылки на родительские хэши в Древе (DAG)
+    payload: dict[str, Any]         # Данные (Quest, FlowDrop, Player или новый Кон)
+    created_at: str
+    signature: str                  # Ed25519 подпись автора
+
+
+__all__ = [
+    # Лестница Совести
+    "StepName",
+    "ConscienceStep",
+    # Иерархия Древа и Кон
+    "TreeTier",
+    "Role",
+    "Lad",
+    "Concept",
+    "Task",
+    "Kon",
+    "Quest",
+    # Потоки и Капли
+    "FlowKind",
+    "DropKind",
+    "FlowDrop",
+    "FlowSummary",
+    "QuestFlow",
+    # Игрок
+    "Player",
+    "AIMemory",
+    # Merkle DAG
+    "DagNodeType",
+    "DagNode",
+]

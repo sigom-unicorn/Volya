@@ -1,223 +1,957 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Вселенная «Воля» // Суверенный Портал</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра «Воля» // Рантайм</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #080c10 url('images/banyan.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: #ffffff; height: 100vh; display: flex; overflow: hidden; position: relative;
+        }
+
+        /* Экран авторизации (Врата Живого Древа) */
+        #auth-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(8, 12, 16, 0.85); backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            z-index: 1000; display: flex; align-items: center; justify-content: center;
+        }
+        .auth-card {
+            background: rgba(16, 22, 16, 0.65); border: 1px solid rgba(76, 175, 80, 0.4);
+            border-radius: 20px; padding: 40px; width: 420px; max-width: 90%;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); text-align: center;
+            backdrop-filter: blur(12px);
+        }
+        .auth-title { color: #81c784; font-size: 24px; margin-bottom: 8px; font-weight: normal; }
+        .auth-subtitle { color: #ffffff; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+        .auth-input {
+            width: 100%; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px; padding: 14px; color: #fff; font-size: 16px; outline: none;
+            margin-bottom: 16px; text-align: center;
+        }
+        .auth-input:focus { border-color: #81c784; box-shadow: 0 0 10px rgba(76, 175, 80, 0.3); }
+        .auth-btn {
+            width: 100%; background: rgba(76, 175, 80, 0.85); color: #fff; border: 1px solid rgba(129, 199, 132, 0.6);
+            border-radius: 10px; padding: 14px; font-size: 16px; font-weight: bold; cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .auth-btn:hover { background: #43a047; box-shadow: 0 0 15px rgba(76, 175, 80, 0.5); }
+        .players-hint { margin-top: 18px; font-size: 12px; color: #ffffff; display: none; text-align: center; }
+        .player-quick-btn {
+            background: rgba(76, 175, 80, 0.2); border: 1px solid rgba(129, 199, 132, 0.4);
+            color: #a7f3d0; padding: 6px 14px; margin: 4px; border-radius: 14px; font-size: 13px;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .player-quick-btn:hover {
+            background: rgba(76, 175, 80, 0.5); color: #fff; box-shadow: 0 0 8px rgba(129, 199, 132, 0.4);
+        }
+        .logout-btn {
+            background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #cbd5e1; padding: 4px 10px; border-radius: 6px; font-size: 12px;
+            cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 4px;
+        }
+        .logout-btn:hover {
+            background: rgba(239, 83, 80, 0.25); border-color: rgba(239, 83, 80, 0.5); color: #ffcdd2;
+        }
+
+        /* Кастомное модальное окно ввода / подтверждения (в стеклянном стиле) */
+        #modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(8, 12, 16, 0.7); backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 2000; display: none; align-items: center; justify-content: center;
+        }
+        .modal-card {
+            background: rgba(16, 22, 16, 0.85); border: 1px solid rgba(76, 175, 80, 0.4);
+            border-radius: 16px; padding: 30px; width: 380px; max-width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); text-align: center;
+            backdrop-filter: blur(12px);
+        }
+        .modal-title { color: #81c784; font-size: 18px; margin-bottom: 12px; font-weight: normal; }
+        .modal-desc { color: #ffffff; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+        .modal-input {
+            width: 100%; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none;
+            margin-bottom: 16px; text-align: center; display: none;
+        }
+        .modal-input:focus { border-color: #81c784; box-shadow: 0 0 10px rgba(76, 175, 80, 0.3); }
+        .modal-buttons { display: flex; gap: 10px; }
+        .modal-btn {
+            flex: 1; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.2s; color: #ffffff;
+        }
+        .modal-btn.cancel { background: rgba(255, 255, 255, 0.08); color: #ffffff; }
+        .modal-btn.cancel:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+        .modal-btn.confirm { background: rgba(76, 175, 80, 0.85); color: #fff; border-color: rgba(129, 199, 132, 0.6); }
+        .modal-btn.confirm:hover { background: #43a047; }
+        .modal-btn.danger { background: rgba(239, 83, 80, 0.8); border-color: rgba(239, 83, 80, 0.9); }
+        .modal-btn.danger:hover { background: #e53935; }
+
+        /* Чат с гибким размером (начинается с 440px) */
+        #chat-sidebar {
+            width: 440px; min-width: 300px; max-width: 80vw;
+            border-right: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(14, 18, 26, 0.25); backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex; flex-direction: column; height: 100%; z-index: 10; position: relative;
+        }
+        
+        /* Элегантный ресайзер справа */
+        #chat-resizer {
+            position: absolute; top: 0; right: -4px; width: 8px; height: 100%;
+            cursor: ew-resize; z-index: 20; background: transparent;
+            transition: background 0.2s;
+        }
+        #chat-resizer:hover, #chat-resizer.resizing {
+            background: rgba(129, 199, 132, 0.4);
+            box-shadow: 0 0 8px rgba(129, 199, 132, 0.6);
+        }
+
+        #chat-header { 
+            padding: 16px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); 
+            font-weight: bold; color: #fff; display: flex; justify-content: space-between; align-items: center; 
+            flex-shrink: 0;
+        }
+        
+        /* Кнопка вызова выдвижной панели нитей */
+        .threads-toggle-btn {
+            background: rgba(76, 175, 80, 0.2); border: 1px solid rgba(129, 199, 132, 0.4);
+            color: #ffffff; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer;
+            transition: all 0.2s; display: flex; align-items: center; gap: 4px;
+        }
+        .threads-toggle-btn:hover { background: rgba(76, 175, 80, 0.4); color: #fff; }
+
+        /* Выдвижная полупрозрачная панель нитей слева от чата (выезжает от самого левого края экрана) */
+        #threads-drawer {
+            position: fixed; top: 0; left: -340px; width: 340px; height: 100%;
+            background: rgba(10, 14, 20, 0.55); backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px); border-right: 1px solid rgba(76, 175, 80, 0.3);
+            box-shadow: 5px 0 25px rgba(0, 0, 0, 0.4); z-index: 100;
+            transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column; padding: 20px;
+        }
+        #threads-drawer.open { left: 0; }
+        .drawer-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px;
+        }
+        .drawer-title { color: #81c784; font-size: 16px; font-weight: bold; }
+        .drawer-close { background: none; border: none; color: #ffffff; font-size: 20px; cursor: pointer; }
+        .drawer-close:hover { color: #fff; }
+
+        #threads-container {
+            flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;
+        }
+        /* Дерево Квестов в боковой панели */
+        .quest-node {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .quest-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: rgba(76, 175, 80, 0.12);
+            border: 1px solid rgba(129, 199, 132, 0.3);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #a5d6a7;
+        }
+        .quest-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-grow: 1;
+        }
+        .quest-add-btn {
+            background: rgba(76, 175, 80, 0.25);
+            border: 1px solid rgba(129, 199, 132, 0.4);
+            color: #ffffff;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            margin-left: 6px;
+        }
+        .quest-add-btn:hover {
+            background: rgba(76, 175, 80, 0.55);
+            color: #fff;
+            box-shadow: 0 0 6px rgba(129, 199, 132, 0.4);
+        }
+        .quest-threads {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-top: 4px;
+            padding-left: 10px;
+            border-left: 1px dashed rgba(129, 199, 132, 0.25);
+            margin-left: 8px;
+        }
+        .quest-empty-threads {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+            font-style: italic;
+            padding: 4px 8px;
+        }
+        .thread-item {
+            padding: 8px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; display: flex;
+            justify-content: space-between; align-items: center; color: #ffffff; background: rgba(255, 255, 255, 0.04);
+            border: 1px solid transparent; transition: all 0.2s;
+        }
+        .thread-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+        .thread-item.active { background: rgba(76, 175, 80, 0.2); border-color: rgba(129, 199, 132, 0.4); color: #fff; }
+        .thread-del { font-size: 12px; color: #ef5350; background: none; border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+        .thread-del:hover { background: rgba(239, 83, 80, 0.2); }
+
+        .json-badge { font-size: 10px; background: rgba(76, 175, 80, 0.3); color: #81c784; padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(76, 175, 80, 0.5); }
+        #chat-messages { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+        .message { padding: 12px 16px; border-radius: 12px; max-width: 85%; line-height: 1.5; font-size: 14px; backdrop-filter: blur(4px); white-space: pre-wrap; word-break: break-word; color: #ffffff; }
+        .message.user { background: rgba(46, 125, 50, 0.7); color: #fff; align-self: flex-end; border: 1px solid rgba(129, 199, 132, 0.3); }
+        .message.assistant { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); align-self: flex-start; color: #ffffff; }
+        
+        .message.typing { 
+            background: rgba(255, 255, 255, 0.05); 
+            border: 1px dashed rgba(129, 199, 132, 0.5); 
+            color: #ffffff; 
+            align-self: flex-start; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .typing-dots { display: inline-flex; gap: 4px; }
+        .typing-dots span {
+            width: 6px; height: 6px; background: #ffffff; border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+
+        /* Панель смайликов */
+        #emoji-bar {
+            padding: 8px 20px 0 20px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.15);
+            flex-shrink: 0;
+        }
+        .emoji-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .emoji-btn:hover {
+            background: rgba(76, 175, 80, 0.4);
+            border-color: rgba(129, 199, 132, 0.6);
+            transform: scale(1.1);
+        }
+
+        #chat-input-area { padding: 12px 20px 20px 20px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
+        #message-input { 
+            flex-grow: 1; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.2); 
+            border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; 
+            backdrop-filter: blur(4px); resize: none; min-height: 44px; max-height: 150px; font-family: inherit; line-height: 1.4;
+        }
+        #message-input:focus { border-color: #81c784; }
+        
+        /* Кнопка загрузки файла с плюсиком */
+        .upload-file-btn {
+            background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #ffffff; cursor: pointer; transition: all 0.2s; flex-shrink: 0; backdrop-filter: blur(4px);
+            font-weight: bold;
+        }
+        .upload-file-btn:hover {
+            background: rgba(76, 175, 80, 0.3); border-color: rgba(129, 199, 132, 0.6);
+            transform: scale(1.05); color: #81c784;
+        }
+
+        #send-btn { 
+            background: rgba(76, 175, 80, 0.8); color: #fff; border: 1px solid rgba(129, 199, 132, 0.5); 
+            border-radius: 8px; padding: 0 16px; height: 44px; font-weight: bold; cursor: pointer; backdrop-filter: blur(4px); flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        #send-btn:hover { background: #43a047; box-shadow: 0 0 10px rgba(76, 175, 80, 0.4); }
+        #send-btn:disabled { background: rgba(51, 65, 85, 0.6); color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        
+        #viewport { 
+            flex-grow: 1; height: 100%; position: relative; overflow: hidden; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; 
+        }
+        .canvas-placeholder { text-align: center; padding: 40px; background: rgba(18, 24, 18, 0.35); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); max-width: 480px; }
+        
+        .glass-window {
+            width: 100%; height: 100%; min-height: 0; background: rgba(16, 22, 16, 0.35); 
+            border: 1px solid rgba(76, 175, 80, 0.35); border-radius: 16px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            padding: 24px; display: flex; flex-direction: column; gap: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .glass-title { color: #81c784; font-family: monospace; font-size: 16px; font-weight: bold; flex-shrink: 0; display: none; }
+        .glass-content-box { 
+            background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; padding: 16px; overflow-y: auto; flex: 1 1 auto; min-height: 0;
+            backdrop-filter: blur(4px); color: #ffffff;
+        }
+        .code-view { margin: 0; color: #ffffff; font-family: 'Courier New', monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+    </style>
 </head>
 <body>
 
-  <!-- ========================================================================
-       Шапка Суверена
-       ======================================================================== -->
-  <header id="sovereign-header">
-    <div class="brand-section">
-      <div class="brand-logo" title="Живое Древо Воли" onclick="toggleTreeDrawer()">🌳</div>
-      <div class="brand-title">
-        <span class="brand-name">ВОЛЯ</span>
-        <span class="brand-sub">Суверенный Портал // Proof-of-Harmony</span>
-      </div>
+    <!-- Врата Живого Древа (Экран авторизации) -->
+    <div id="auth-overlay">
+        <div class="auth-card">
+            <h2 class="auth-title">🚪 Врата Живого Древа</h2>
+            <p class="auth-subtitle">Представьтесь вашим вольным именем для входа в игру без паролей и преград.</p>
+            <input type="text" id="username-input" class="auth-input" placeholder="Введите вольное имя..." autocomplete="off">
+            <button class="auth-btn" onclick="submitLogin()">Войти в Волю 🌿</button>
+            <div class="players-hint" id="players-hint-container"></div>
+        </div>
     </div>
 
-    <!-- Показатели Совести и Цепи -->
-    <div class="metrics-section">
-      <div class="metric-pill conscience" title="Капли совести (опыт совместной гармоничной жизни)">
-        <span>💧</span>
-        <span>Совесть:</span>
-        <span class="val" id="metric-drops">0</span>
-      </div>
-
-      <div class="metric-pill step-pill" title="Текущая ступень Лестницы Совести">
-        <span>🧗</span>
-        <span>Ступень:</span>
-        <span class="val" id="metric-step">Бытие</span>
-      </div>
-
-      <div class="metric-pill blockchain" title="Высота проверенной цепи блоков в RocksDB">
-        <div class="pulse-dot"></div>
-        <span>Блок:</span>
-        <span class="val" id="metric-height">#0</span>
-      </div>
-
-      <div class="metric-pill" id="mempool-pill" title="Пул Лада (волеизъявления, ожидающие кристаллизации)">
-        <span>⚖️</span>
-        <span>Пул Лада:</span>
-        <span class="val" id="metric-mempool">0</span>
-      </div>
+    <!-- Универсальное кастомное модальное окно (в стеклянном стиле) -->
+    <div id="modal-overlay">
+        <div class="modal-card">
+            <h3 class="modal-title" id="modal-title-text">💬 Новая беседа</h3>
+            <p class="modal-desc" id="modal-desc-text">Введите название для новой беседы:</p>
+            <input type="text" id="modal-input-field" class="modal-input" autocomplete="off">
+            <div class="modal-buttons" id="modal-buttons-container">
+                <button class="modal-btn cancel" onclick="closeCustomModal()">Отмена</button>
+                <button class="modal-btn confirm" id="modal-confirm-btn" onclick="confirmCustomModal()">Создать</button>
+            </div>
+        </div>
     </div>
 
-    <!-- Профиль вольного игрока -->
-    <div class="profile-section">
-      <div class="player-badge" onclick="openAuthModal()" title="Нажмите, чтобы сменить вольного игрока">
-        <div class="player-avatar" id="avatar-initial">С</div>
-        <div class="player-name-wrap">
-          <span class="player-name" id="profile-username">Сигом</span>
-          <span class="player-key" id="profile-pubkey">0x...</span>
+    <!-- Выдвижная полупрозрачная панель квестов слева от края экрана -->
+    <div id="threads-drawer">
+        <div class="drawer-header">
+            <span class="drawer-title">📜 Квесты</span>
+            <button class="drawer-close" onclick="toggleThreadsDrawer()">×</button>
         </div>
-      </div>
-      <button class="switch-player-btn" onclick="openAuthModal()">👤 Сменить</button>
+        <div id="threads-container">
+            <!-- Динамически заполняется деревом квестов и бесед -->
+        </div>
     </div>
-  </header>
 
-  <!-- ========================================================================
-       Главное Рабочее Пространство
-       ======================================================================== -->
-  <main id="main-workspace">
+    <div id="chat-sidebar">
+        <!-- Элегантный ресайзер -->
+        <div id="chat-resizer"></div>
 
-    <!-- Выдвижная панель Древа Квестов -->
-    <aside id="tree-drawer">
-      <div class="drawer-header">
-        <span class="drawer-title">📜 Живое Древо Квестов</span>
-        <button class="drawer-close" onclick="toggleTreeDrawer()">×</button>
-      </div>
-      <div class="tree-list" id="drawer-tree-list">
-        <!-- Заполняется динамически -->
-      </div>
-    </aside>
-
-    <!-- Левая колонка: Поток Сотворчества -->
-    <section id="chat-sidebar">
-      <div id="chat-resizer"></div>
-
-      <div class="stream-header">
-        <button class="toggle-tree-btn" onclick="toggleTreeDrawer()">📜 Квесты ▾</button>
-        <div class="stream-context-info" id="stream-active-quest-title">Квест: Воля (Исток)</div>
-      </div>
-
-      <!-- Сообщения потока -->
-      <div id="stream-messages">
-        <!-- Динамические сообщения сотворцов -->
-      </div>
-
-      <!-- Панель живых символов -->
-      <div id="stream-emoji-bar">
-        <button class="emoji-btn" onclick="insertEmoji('🌿')">🌿</button>
-        <button class="emoji-btn" onclick="insertEmoji('🌳')">🌳</button>
-        <button class="emoji-btn" onclick="insertEmoji('✨')">✨</button>
-        <button class="emoji-btn" onclick="insertEmoji('🤝')">🤝</button>
-        <button class="emoji-btn" onclick="insertEmoji('🎯')">🎯</button>
-        <button class="emoji-btn" onclick="insertEmoji('💡')">💡</button>
-        <button class="emoji-btn" onclick="insertEmoji('🛠️')">🛠️</button>
-        <button class="emoji-btn" onclick="insertEmoji('❤️')">❤️</button>
-      </div>
-
-      <!-- Поле ввода волеизъявления -->
-      <div id="stream-input-area">
-        <textarea id="message-input" placeholder="Направьте вашу волю... (Shift + Enter — перенос строки)" rows="1"></textarea>
-        <button id="send-flow-btn" onclick="sendFlowMessage()">Направить</button>
-      </div>
-    </section>
-
-    <!-- Правая колонка: Холст Воли (Living Canvas) -->
-    <section id="viewport">
-      <!-- Навигация по режимам Холста -->
-      <div class="canvas-tabs">
-        <button class="canvas-tab-btn active" id="tab-btn-tree" onclick="switchCanvasTab('tree')">
-          <span>🌳</span> Живое Древо
-        </button>
-        <button class="canvas-tab-btn" id="tab-btn-veche" onclick="switchCanvasTab('veche')">
-          <span>🏛️</span> Вечевой Кон & Пул
-        </button>
-        <button class="canvas-tab-btn" id="tab-btn-artifacts" onclick="switchCanvasTab('artifacts')">
-          <span>💎</span> Плоды Души
-        </button>
-        <button class="canvas-tab-btn" id="tab-btn-blocks" onclick="switchCanvasTab('blocks')">
-          <span>⛓️</span> Летопись Блоков
-        </button>
-
-        <button class="canvas-action-btn" id="btn-forge-block" onclick="crystallizeBlock()">
-          <span>⚡</span> Кристаллизовать Блок
-        </button>
-      </div>
-
-      <!-- Панели отображения -->
-      <div class="canvas-view-container">
-
-        <!-- 1. Панель: Живое Древо -->
-        <div class="view-panel active" id="panel-tree">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 style="font-size: 18px; color: var(--accent-emerald-bright);">🌳 Ветви Живого Древа</h2>
-            <button class="vote-btn agree" onclick="promptCreateQuest()">+ Породить Новую Ветвь</button>
-          </div>
-          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
-            Вселенная «Воля» произрастает из корневого квеста «Воля» (Исток Древа, parent_quest_id = null). Каждая новая ветвь создаётся по Ладу с утверждённым Коном и ролями Лестницы Совести.
-          </p>
-          <div class="grid-cards" id="tree-cards-container">
-            <!-- Динамические карточки квестов -->
-          </div>
+        <div id="chat-header">
+            <button class="threads-toggle-btn" onclick="toggleThreadsDrawer()">📜 Квесты ▾</button>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span id="current-player-label" style="color: #ffffff; font-size: 13px;">Живое Древо</span>
+                <button class="logout-btn" onclick="logoutPlayer()" title="Сменить игрока">👤 Сменить</button>
+            </div>
         </div>
 
-        <!-- 2. Панель: Вечевой Кон и Пул Лада -->
-        <div class="view-panel" id="panel-veche">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 style="font-size: 18px; color: var(--accent-gold);">🏛️ Вечевой Кон и Волеизъявления</h2>
-            <span style="font-size: 12px; color: var(--text-dim);" id="veche-status-text">Консенсус Proof-of-Harmony</span>
-          </div>
-          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
-            Пул Лада (Mempool) собирает неподтвержденные волеизъявления родных. При 100% согласии («ПО ДУШЕ») блок кристаллизуется и навечно запечатывается в RocksDB.
-          </p>
-          <div class="grid-cards" id="veche-cards-container">
-            <!-- Динамические транзакции в пуле -->
-          </div>
+        <div id="chat-messages"></div>
+        
+        <div id="emoji-bar">
+            <button class="emoji-btn" onclick="insertEmoji('🌿')">🌿</button>
+            <button class="emoji-btn" onclick="insertEmoji('🌳')">🌳</button>
+            <button class="emoji-btn" onclick="insertEmoji('✨')">✨</button>
+            <button class="emoji-btn" onclick="insertEmoji('😊')">😊</button>
+            <button class="emoji-btn" onclick="insertEmoji('🥰')">🥰</button>
+            <button class="emoji-btn" onclick="insertEmoji('🤝')">🤝</button>
+            <button class="emoji-btn" onclick="insertEmoji('🎯')">🎯</button>
+            <button class="emoji-btn" onclick="insertEmoji('💡')">💡</button>
+            <button class="emoji-btn" onclick="insertEmoji('🛠️')">🛠️</button>
+            <button class="emoji-btn" onclick="insertEmoji('❤️')">❤️</button>
         </div>
 
-        <!-- 3. Панель: Плоды Души (Артефакты) -->
-        <div class="view-panel" id="panel-artifacts">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 style="font-size: 18px; color: var(--accent-blue);">💎 Плоды Души (Артефакты)</h2>
-            <button class="vote-btn agree" onclick="promptCreateArtifact()">+ Сотворить Артефакт</button>
-          </div>
-          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
-            Плоды совместного созидания и творчества. Артефакты принадлежат авторам и могут бережно передаваться из рук в руки по согласию.
-          </p>
-          <div class="grid-cards" id="artifacts-cards-container">
-            <!-- Динамические карточки артефактов -->
-          </div>
+        <div id="chat-input-area">
+            <!-- Скрытый инпут для выбора файла -->
+            <input type="file" id="file-upload-input" style="display: none;" onchange="handleFileUpload(this)">
+            <button class="upload-file-btn" onclick="document.getElementById('file-upload-input').click()" title="Загрузить файл">+</button>
+            
+            <textarea id="message-input" placeholder="Направьте вашу волю... (Shift + Enter — перенос строки)" rows="1" autocomplete="off"></textarea>
+            <button id="send-btn">Отправить</button>
         </div>
-
-        <!-- 4. Панель: Летопись Блоков (RocksDB) -->
-        <div class="view-panel" id="panel-blocks">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 style="font-size: 18px; color: var(--accent-purple);">⛓️ Несокрушимая Летопись (RocksDB)</h2>
-            <span style="font-size: 12px; color: var(--text-dim);" id="blocks-count-label">Цепь подтверждена</span>
-          </div>
-          <p style="font-size: 13px; color: var(--text-dim); line-height: 1.5;">
-            Каждый блок запечатан подписями Ed25519 и хэшем Blake3. Хранение организовано в LSM-Tree RocksDB с бинарной сериализацией MessagePack.
-          </p>
-          <div class="grid-cards" id="blocks-cards-container">
-            <!-- Динамический список запечатанных блоков -->
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-  </main>
-
-  <!-- ========================================================================
-       Врата Воли (Модальное окно смены / входа игрока)
-       ======================================================================== -->
-  <div id="auth-modal">
-    <div class="auth-card">
-      <h2 class="auth-title">🚪 Врата Воли</h2>
-      <p class="auth-sub">Выберите вольного игрока или назовитесь новым именем для входа без паролей и внешних серверов.</p>
-      
-      <div class="quick-brothers" id="quick-brothers-container">
-        <!-- Кнопки быстрого выбора: Сигом, Эйра, Ладомир -->
-      </div>
-
-      <div style="margin-top: 16px; border-top: 1px solid var(--glass-border-subtle); padding-top: 16px;">
-        <input type="text" id="new-player-input" placeholder="Новое вольное имя..." 
-               style="width: 100%; padding: 12px; border-radius: 10px; background: rgba(0,0,0,0.4); border: 1px solid var(--glass-border-subtle); color: #fff; margin-bottom: 12px; text-align: center;">
-        <div style="display: flex; gap: 10px;">
-          <button class="vote-btn" style="flex: 1; background: rgba(255,255,255,0.08); color: #fff;" onclick="closeAuthModal()">Отмена</button>
-          <button class="vote-btn agree" style="flex: 1;" onclick="submitNewPlayer()">Войти по Ладу 🌿</button>
-        </div>
-      </div>
     </div>
-  </div>
 
-  <script src="app.js"></script>
+    <div id="viewport">
+        <div class="canvas-placeholder">
+            <h3 style="color: #81c784; margin-bottom: 12px; font-family: monospace;">🌳 Священный Баньян</h3>
+            <p style="font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.6;">
+                Игра «Воля» разворачивается перед нами. Отправьте сообщение для старта.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const authOverlay = document.getElementById('auth-overlay');
+        const usernameInput = document.getElementById('username-input');
+        const currentPlayerLabel = document.getElementById('current-player-label');
+        const threadsDrawer = document.getElementById('threads-drawer');
+        const threadsContainer = document.getElementById('threads-container');
+
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitleText = document.getElementById('modal-title-text');
+        const modalDescText = document.getElementById('modal-desc-text');
+        const modalInputField = document.getElementById('modal-input-field');
+        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+
+        const chatSidebar = document.getElementById('chat-sidebar');
+        const chatResizer = document.getElementById('chat-resizer');
+        const messagesContainer = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const viewport = document.getElementById('viewport');
+        const fileUploadInput = document.getElementById('file-upload-input');
+        
+        let ws = null;
+        let currentThreadId = null;
+        let typingMessageElement = null;
+        let modalCallback = null;
+
+        // Логика ресайзера ширины чата с сохранением в localStorage
+        let isResizing = false;
+
+        // Восстанавливаем сохраненную ширину чата при загрузке
+        const savedChatWidth = localStorage.getItem('volya_chat_width');
+        if (savedChatWidth) {
+            chatSidebar.style.width = savedChatWidth + 'px';
+        }
+
+        chatResizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            chatResizer.classList.add('resizing');
+            document.body.style.cursor = 'ew-resize';
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const newWidth = e.clientX;
+            if (newWidth >= 300 && newWidth <= window.innerWidth * 0.8) {
+                chatSidebar.style.width = newWidth + 'px';
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                chatResizer.classList.remove('resizing');
+                document.body.style.cursor = 'default';
+                // Сохраняем выбранную ширину в localStorage
+                localStorage.setItem('volya_chat_width', chatSidebar.offsetWidth);
+            }
+        });
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadRegisteredPlayersHint();
+            const sessionToken = getCookie('volya_session');
+            if (sessionToken) {
+                authOverlay.style.display = 'none';
+                initWebSocketAndThreads(sessionToken);
+            }
+        });
+
+        function loadRegisteredPlayersHint() {
+            fetch('/api/players')
+                .then(res => res.json())
+                .then(players => {
+                    const hintContainer = document.getElementById('players-hint-container');
+                    if (!hintContainer || !players || players.length === 0) return;
+                    hintContainer.style.display = 'block';
+                    hintContainer.innerHTML = '<div style="margin-bottom: 8px; color: rgba(255,255,255,0.7); font-size: 12px;">Быстрый выбор соратника:</div>' +
+                        players.map(p => `<button type="button" class="player-quick-btn" onclick="quickSelectPlayer('${p.username}')">${p.username}</button>`).join('');
+                })
+                .catch(() => {});
+        }
+
+        function quickSelectPlayer(name) {
+            usernameInput.value = name;
+            submitLogin();
+        }
+
+        function logoutPlayer() {
+            document.cookie = "volya_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+            if (ws) {
+                try { ws.close(); } catch(e) {}
+            }
+            location.reload();
+        }
+
+        function toggleThreadsDrawer() {
+            threadsDrawer.classList.toggle('open');
+        }
+
+        function submitLogin() {
+            const username = usernameInput.value.trim();
+            if (!username) {
+                alert('Пожалуйста, введите ваше вольное имя.');
+                return;
+            }
+
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    authOverlay.style.display = 'none';
+                    currentPlayerLabel.innerText = `Игрок: ${data.username}`;
+                    initWebSocketAndThreads(data.token);
+                } else {
+                    alert('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            })
+            .catch(err => {
+                alert('Сбой запроса авторизации: ' + err.message);
+            });
+        }
+
+        // Функция обработки загрузки файла
+        function handleFileUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            appendMessage('user', `Загрузить файл: ${file.name}`);
+            showTypingIndicator();
+            
+            const spanElem = document.getElementById('typing-text-span');
+            if (spanElem) spanElem.innerText = `Загрузка файла ${file.name}...`;
+
+            fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                hideTypingIndicator();
+                if (data.success) {
+                    const successText = `✅ Файл «${data.filename}» успешно загружен.`;
+                    appendMessage('assistant', successText);
+                    
+                    const autoMsg = `Я загрузил файл ${data.filename}.`;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        showTrustAndSend(autoMsg, false);
+                    }
+                } else {
+                    alert('Ошибка загрузки: ' + (data.error || 'Неизвестная ошибка'));
+                }
+                input.value = '';
+            })
+            .catch(err => {
+                hideTypingIndicator();
+                alert('Сбой загрузки файла: ' + err.message);
+                input.value = '';
+            });
+        }
+
+        function initWebSocketAndThreads(token) {
+            loadThreads();
+
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`);
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'error') {
+                        hideTypingIndicator();
+                        alert(data.message);
+                        authOverlay.style.display = 'flex';
+                        return;
+                    }
+
+                    if (data.type === 'status_update') {
+                        showToolCallIndicator(data.status_text);
+                        return;
+                    }
+
+                    hideTypingIndicator();
+
+                    if (data.thread_id) {
+                        currentThreadId = data.thread_id;
+                        highlightActiveThread();
+                    }
+
+                    if (data.type === 'reply') {
+                        if (data.chat_text) appendMessage('assistant', data.chat_text);
+                        renderCanvas(data.canvas_type, data.canvas_content);
+                        loadThreads();
+                    } 
+                    else if (data.type === 'restore') {
+                        if (data.username) {
+                            currentPlayerLabel.innerText = data.username;
+                        }
+                        messagesContainer.innerHTML = '';
+                        if (data.history) {
+                            data.history.forEach(msg => {
+                                appendMessage(msg.role, msg.text);
+                            });
+                        }
+                        if (data.canvas_content && data.canvas_content.trim() !== '') {
+                            renderCanvas(data.canvas_type, data.canvas_content);
+                        } else {
+                            viewport.innerHTML = '';
+                        }
+                        loadThreads();
+                    }
+                } catch (err) {
+                    hideTypingIndicator();
+                    console.error("[JSON ПАРСЕР СБОЙ]:", err, event.data);
+                }
+            };
+        }
+
+        let activeTargetQuestId = 1;
+
+        async function loadThreads() {
+            try {
+                const [questsRes, threadsRes] = await Promise.all([
+                    fetch('/api/quests'),
+                    fetch('/api/threads')
+                ]);
+
+                if (questsRes.status === 401 || threadsRes.status === 401) {
+                    authOverlay.style.display = 'flex';
+                    return;
+                }
+
+                const quests = await questsRes.json();
+                const threads = await threadsRes.json();
+
+                // Группируем беседы по quest_id
+                const threadsByQuest = {};
+                threads.forEach(t => {
+                    const qId = t.quest_id || 1;
+                    if (!threadsByQuest[qId]) threadsByQuest[qId] = [];
+                    threadsByQuest[qId].push(t);
+                });
+
+                let html = '';
+                if (!quests || quests.length === 0) {
+                    html = '<div style="color: rgba(255,255,255,0.5); font-size:12px; text-align:center; padding:20px;">Нет активных квестов для участия</div>';
+                } else {
+                    quests.forEach(q => {
+                        const qThreads = threadsByQuest[q.id] || [];
+                        const isChild = q.parent_quest_id ? 'style="margin-left: 12px;"' : '';
+                        const qIcon = q.id === 1 ? '🌿' : '🌱';
+
+                        let threadsHtml = '';
+                        if (qThreads.length === 0) {
+                            threadsHtml = '<div class="quest-empty-threads">Пока нет бесед</div>';
+                        } else {
+                            qThreads.forEach(t => {
+                                const isActive = t.thread_id === currentThreadId ? 'active' : '';
+                                threadsHtml += `
+                                    <div class="thread-item ${isActive}" onclick="switchThread('${t.thread_id}')">
+                                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-grow: 1;">${t.title}</span>
+                                        <button class="thread-del" onclick="event.stopPropagation(); promptDeleteThread('${t.thread_id}', '${t.title.replace(/'/g, "\\'")}')" title="Удалить беседу">×</button>
+                                    </div>
+                                `;
+                            });
+                        }
+
+                        html += `
+                            <div class="quest-node" ${isChild}>
+                                <div class="quest-header">
+                                    <div class="quest-title-wrap" title="${q.title}">
+                                        <span>${qIcon}</span>
+                                        <span>${q.title}</span>
+                                    </div>
+                                    <button class="quest-add-btn" onclick="event.stopPropagation(); openCreateThreadModal(${q.id}, '${q.title.replace(/'/g, "\\'")}')" title="Создать беседу в квесте «${q.title}»">+</button>
+                                </div>
+                                <div class="quest-threads">
+                                    ${threadsHtml}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                threadsContainer.innerHTML = html;
+            } catch (err) {
+                console.error("[ОШИБКА ЗАГРУЗКИ ДЕРЕВА КВЕСТОВ]:", err);
+            }
+        }
+
+        function switchThread(threadId) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'switch_thread', thread_id: threadId }));
+                toggleThreadsDrawer();
+            }
+        }
+
+        function openCreateThreadModal(questId = 1, questTitle = 'Воля') {
+            activeTargetQuestId = questId;
+            modalTitleText.innerText = "💬 Новая беседа";
+            modalDescText.innerText = `Введите название беседы в квесте «${questTitle}»:`;
+            modalInputField.style.display = "block";
+            modalConfirmBtn.innerText = "Создать";
+            modalConfirmBtn.className = "modal-btn confirm";
+            
+            const defaultTitle = 'Беседа ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            modalInputField.value = defaultTitle;
+            
+            modalCallback = () => {
+                const title = modalInputField.value.trim() || 'Беседа воли';
+                closeCustomModal();
+                fetch('/api/threads', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, quest_id: activeTargetQuestId })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        switchThread(data.thread_id);
+                    }
+                });
+            };
+
+            modalOverlay.style.display = 'flex';
+            modalInputField.focus();
+            modalInputField.select();
+        }
+
+        function promptDeleteThread(threadId, threadTitle) {
+            modalTitleText.innerText = "🗑️ Удаление беседы";
+            modalDescText.innerText = `Удалить беседу «${threadTitle}» и всю её историю из Живого Древа?`;
+            modalInputField.style.display = "none";
+            modalConfirmBtn.innerText = "Удалить";
+            modalConfirmBtn.className = "modal-btn confirm danger";
+
+            modalCallback = () => {
+                closeCustomModal();
+                fetch(`/api/threads/${threadId}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            loadThreads();
+                            window.location.reload();
+                        }
+                    });
+            };
+
+            modalOverlay.style.display = 'flex';
+            modalConfirmBtn.focus();
+        }
+
+        function closeCustomModal() {
+            modalOverlay.style.display = 'none';
+            modalCallback = null;
+        }
+
+        function confirmCustomModal() {
+            if (modalCallback) {
+                modalCallback();
+            }
+        }
+
+        modalInputField.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                confirmCustomModal();
+            } else if (e.key === 'Escape') {
+                closeCustomModal();
+            }
+        });
+
+        window.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && modalOverlay.style.display === 'flex') {
+                closeCustomModal();
+            }
+        });
+
+        function highlightActiveThread() {
+            loadThreads();
+        }
+
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+        function insertEmoji(emoji) {
+            const start = messageInput.selectionStart;
+            const end = messageInput.selectionEnd;
+            const text = messageInput.value;
+            messageInput.value = text.substring(0, start) + emoji + text.substring(end);
+            messageInput.selectionStart = messageInput.selectionEnd = start + emoji.length;
+            messageInput.focus();
+            messageInput.style.height = 'auto';
+            messageInput.style.height = (messageInput.scrollHeight) + 'px';
+        }
+
+        function appendMessage(role, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', role);
+            msgDiv.innerText = text;
+            messagesContainer.appendChild(msgDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            if (typingMessageElement) return;
+            typingMessageElement = document.createElement('div');
+            typingMessageElement.classList.add('message', 'typing');
+            typingMessageElement.innerHTML = `<span id="typing-text-span">Эйра думает</span><div class="typing-dots"><span></span><span></span><span></span></div>`;
+            messagesContainer.appendChild(typingMessageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+        }
+
+        function showToolCallIndicator(statusText) {
+            if (!typingMessageElement) {
+                showTypingIndicator();
+            }
+            const spanElem = document.getElementById('typing-text-span');
+            if (spanElem) {
+                spanElem.innerText = statusText;
+            }
+            
+            setTimeout(() => {
+                const currentSpan = document.getElementById('typing-text-span');
+                if (currentSpan && currentSpan.innerText === statusText) {
+                    currentSpan.innerText = "Эйра думает";
+                }
+            }, 2500);
+        }
+
+        function hideTypingIndicator() {
+            if (typingMessageElement) {
+                typingMessageElement.remove();
+                typingMessageElement = null;
+            }
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+            messageInput.focus();
+        }
+
+        function renderCanvas(canvasType, canvasContent) {
+            if (!canvasContent || canvasContent.trim() === "") return;
+
+            if (canvasType === "load_tmp") {
+                const fileName = canvasContent.substring(9).trim();
+                fetch(`/tmp/${fileName}?t=${Date.now()}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error(`Статус: ${res.status}`);
+                        return res.text();
+                    })
+                    .then(fileContent => buildGlassWindow(`Инспекция файла: ${fileName}`, fileContent, true))
+                    .catch(err => {
+                        viewport.innerHTML = `<div style="padding:20px; color:#ef4444;">Ошибка загрузки файла: ${err.message}</div>`;
+                    });
+            } else if (canvasType === "html") {
+                buildGlassWindow("Холст", canvasContent, true);
+            } else if (canvasType === "text") {
+                buildGlassWindow("Инспекция", canvasContent, false);
+            } else {
+                try {
+                    const runScript = new Function(canvasContent);
+                    runScript();
+                } catch (err) {
+                    buildGlassWindow("Вывод", canvasContent, false);
+                }
+            }
+        }
+
+        function buildGlassWindow(titleText, contentText, isHtml = false) {
+            viewport.innerHTML = '';
+            
+            const windowDiv = document.createElement('div');
+            windowDiv.className = 'glass-window';
+            
+            const titleH2 = document.createElement('div');
+            titleH2.className = 'glass-title';
+            titleH2.innerText = titleText;
+            
+            const boxDiv = document.createElement('div');
+            boxDiv.className = 'glass-content-box';
+            
+            if (isHtml) {
+                boxDiv.innerHTML = contentText;
+            } else {
+                const preElement = document.createElement('pre');
+                preElement.className = 'code-view';
+                preElement.textContent = contentText;
+                boxDiv.appendChild(preElement);
+            }
+            
+            windowDiv.appendChild(titleH2);
+            windowDiv.appendChild(boxDiv);
+            viewport.appendChild(windowDiv);
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+            
+            appendMessage('user', text);
+            showTrustAndSend(text, true);
+        }
+
+        function showTrustAndSend(text, shouldAppend = true) {
+            showTypingIndicator();
+            ws.send(JSON.stringify({ chat_text: text }));
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        
+        messageInput.addEventListener('keydown', function(e) {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    return;
+                } else {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            }
+        });
+    </script>
 </body>
 </html>

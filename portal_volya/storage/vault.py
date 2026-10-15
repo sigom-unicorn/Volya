@@ -1,50 +1,73 @@
 """
-Локальный сокровенный сейф игрока (Vault & Sovereign Identity).
+Локальный сокровенный сейф игрока (Vault & Sovereign Identity) на базе RocksDB.
 
 Обеспечивает:
 1. Хранение суверенной криптографической идентичности игрока (Ed25519 KeyPair).
-2. Безопасное локальное сохранение личных потоков («Личный диалог», «Личная беседа»),
-   которые НИКОГДА не передаются в публичный блокчейн и принадлежат только человеку.
+2. Безопасное локальное сохранение личных потоков («Личный диалог», «Личная беседа») в RocksDB,
+   которые НИКОГДА не передаются во внешний мир и принадлежат только человеку.
 3. Локальные черновики и заметки игрока.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
+
+import ormsgpack
+from rocksdict import Options, Rdict
 
 from portal_volya.core.crypto import KeyPair, hash_canonical
-from portal_volya.core.models import FlowMessage, QuestFlow
+from portal_volya.core.models import DropKind, FlowDrop, FlowKind, QuestFlow
 
 
-def create_flow_message(
+def create_flow_drop(
     sender: KeyPair,
-    author: str,
+    author_name: str,
     content: str,
     created_at: str,
-    action: str | None = None,
-) -> FlowMessage:
-    """Создание и подписание канонического сообщения потока сотворчества."""
-    msg_body = {
-        "author": author,
+    flow_id: str = "",
+    quest_id: str = "",
+    flow_kind: FlowKind = FlowKind.DIALOGUE,
+    kind: DropKind = DropKind.TEXT,
+    details: Optional[Dict[str, Any]] = None,
+    media_hash: Optional[str] = None,
+    parent_drop_id: Optional[str] = None,
+) -> FlowDrop:
+    """Создание и подписание канонической капли сотворчества."""
+    drop_body = {
+        "quest_id": quest_id,
+        "flow_id": flow_id,
+        "flow_kind": flow_kind.value if hasattr(flow_kind, "value") else str(flow_kind),
+        "kind": kind.value if hasattr(kind, "value") else str(kind),
         "author_pubkey": sender.public_hex,
+        "author_name": author_name,
         "content": content,
+        "details": details or {},
+        "media_hash": media_hash,
+        "parent_drop_id": parent_drop_id,
         "created_at": created_at,
-        "action": action,
     }
-    msg_id = hash_canonical(msg_body)
-    signature = sender.sign_canonical(msg_body)
-    return FlowMessage(
-        id=msg_id,
-        author=author,
+    drop_id = hash_canonical(drop_body)
+    signature = sender.sign(drop_id.encode("utf-8"))
+    return FlowDrop(
+        id=drop_id,
+        quest_id=quest_id,
+        flow_id=flow_id,
+        flow_kind=flow_kind,
+        kind=kind,
         author_pubkey=sender.public_hex,
+        author_name=author_name,
         content=content,
+        details=details or {},
+        media_hash=media_hash,
+        parent_drop_id=parent_drop_id,
         created_at=created_at,
         signature=signature,
-        action=action,
     )
+
+
+create_flow_message = create_flow_drop  # Псевдоним для совместимости
 
 
 class SovereignIdentity:
@@ -74,40 +97,39 @@ class SovereignIdentity:
 
 
 class LocalVault:
-    """Локальный сейф для сокровенных данных и личных бесед игрока."""
+    """Локальный сейф для сокровенных данных и личных бесед игрока (на базе RocksDB)."""
 
     def __init__(
         self,
         vault_dir: str | Path = "portal_volya/storage",
         identity_file: str = "identity.json",
-        db_file: str = "vault.db",
+        db_file: str = "vault.rocksdb",
     ) -> None:
         self.vault_dir = Path(vault_dir)
         self.vault_dir.mkdir(parents=True, exist_ok=True)
         self.identity_path = self.vault_dir / identity_file
-        self.db_path = self.vault_dir / db_file
-        self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.row_factory = sqlite3.Row
-        return conn
+        db_name = "vault.rocksdb" if db_file.endswith(".db") else db_file
+        self.db_path = self.vault_dir / db_name
 
-    def _init_db(self) -> None:
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS private_flows (
-                    id TEXT PRIMARY KEY,
-                    kind TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    initiator_pubkey TEXT NOT NULL,
-                    data_json TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                """
-            )
+        opts = Options()
+        opts.create_if_missing(True)
+        self.db = Rdict(str(self.db_path), options=opts)
+
+    def close(self) -> None:
+        """Безопасное освобождение дескрипторов RocksDB."""
+        if hasattr(self, "db") and self.db is not None:
+            try:
+                self.db.flush(wait=True)
+                self.db.close()
+            except Exception:
+                pass
+
+    def __enter__(self) -> LocalVault:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
 
     # -----------------------------------------------------------------
     # Управление суверенной идентичностью
@@ -149,58 +171,43 @@ class LocalVault:
         return identity
 
     # -----------------------------------------------------------------
-    # Сокровенные личные потоки (E2EE / Local-Only)
+    # Сокровенные личные потоки (E2EE / Local-Only в RocksDB)
     # -----------------------------------------------------------------
 
     def save_private_flow(self, flow: QuestFlow) -> None:
-        """Сохранение или обновление сокровенного потока."""
-        data_json = json.dumps(flow.model_dump(), ensure_ascii=False)
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO private_flows (id, kind, title, initiator_pubkey, data_json, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    data_json = excluded.data_json,
-                    updated_at = excluded.updated_at;
-                """,
-                (
-                    flow.id,
-                    flow.kind,
-                    flow.title,
-                    flow.initiator_pubkey,
-                    data_json,
-                    flow.updated_at,
-                ),
-            )
+        """Сохранение или обновление сокровенного потока в RocksDB."""
+        data_bytes = ormsgpack.packb(flow.model_dump())
+        self.db[flow.id] = data_bytes
+        self.db.flush(wait=False)
 
     def get_private_flow(self, flow_id: str) -> Optional[QuestFlow]:
         """Получение личного потока по ID."""
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT data_json FROM private_flows WHERE id = ?;", (flow_id,)
-            )
-            row = cursor.fetchone()
-            if not row:
-                return None
-            return QuestFlow(**json.loads(row["data_json"]))
+        data_bytes = self.db.get(flow_id)
+        if data_bytes is None:
+            return None
+        return QuestFlow(**ormsgpack.unpackb(data_bytes))
 
-    def append_private_message(self, flow_id: str, message: FlowMessage) -> None:
-        """Добавление сообщения в личный поток."""
+    def append_private_drop(self, flow_id: str, drop: FlowDrop) -> None:
+        """Добавление капли сотворчества в личный поток."""
         flow = self.get_private_flow(flow_id)
         if not flow:
             raise ValueError(f"Личный поток {flow_id} не найден в сейфе!")
 
-        flow.messages.append(message)
-        flow.updated_at = message.created_at
+        flow.drops.append(drop)
+        flow.updated_at = drop.created_at
         self.save_private_flow(flow)
+
+    def append_private_message(self, flow_id: str, drop: FlowDrop) -> None:
+        """Псевдоним для append_private_drop."""
+        self.append_private_drop(flow_id, drop)
 
     def list_private_flows(self) -> list[QuestFlow]:
         """Список всех личных потоков, отсортированных по времени обновления."""
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT data_json FROM private_flows ORDER BY updated_at DESC;"
-            )
-            rows = cursor.fetchall()
-            return [QuestFlow(**json.loads(r["data_json"])) for r in rows]
+        flows: list[QuestFlow] = []
+        for _, val in self.db.items():
+            try:
+                flows.append(QuestFlow(**ormsgpack.unpackb(val)))
+            except Exception:
+                continue
+        flows.sort(key=lambda f: f.updated_at, reverse=True)
+        return flows
