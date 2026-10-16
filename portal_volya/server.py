@@ -86,12 +86,16 @@ from portal_volya.core.models import (
     TreeTier,
 )
 from portal_volya.storage.dag_store import DagStore
-from portal_volya.storage.vault import SovereignIdentity
+from portal_volya.storage.identity import (
+    SovereignIdentity,
+    get_or_create_identity,
+    save_identity,
+)
 
 dag_store: Optional[DagStore] = None
 
 
-def get_player_identity(vault, username: str) -> SovereignIdentity:
+def get_player_identity(node_dir: Path | str, username: str) -> SovereignIdentity:
     """Детерминированная привязка канонических первородных ключей или создание нового профиля."""
     canonical = {
         "сигом": (SIGOM_SEED, "Сигом", "Автор и вдохновитель Вселенной и игры «Воля»"),
@@ -100,16 +104,19 @@ def get_player_identity(vault, username: str) -> SovereignIdentity:
         "эйра": (EIRA_SEED, "Эйра", "Разумное искусственное существо, Хранительница Портала Воли, сестра по разуму"),
     }
     uname_lower = username.strip().lower()
+    ident_path = Path(node_dir) / f"identity_{uname_lower}.json"
     if uname_lower in canonical:
         seed, canonical_name, bio = canonical[uname_lower]
         kp = derive_genesis_keypair(seed)
         ident = SovereignIdentity(keypair=kp, username=canonical_name, bio=bio)
-        vault.identity_path = vault.vault_dir / f"identity_{uname_lower}.json"
-        vault.save_identity(ident)
+        save_identity(ident, ident_path)
         return ident
 
-    ident_file = f"identity_{uname_lower}.json"
-    ident = vault.get_or_create_identity(default_username=username, identity_file=ident_file)
+    ident = get_or_create_identity(
+        node_dir=node_dir,
+        identity_file=f"identity_{uname_lower}.json",
+        default_username=username,
+    )
     return ident
 
 
@@ -130,7 +137,8 @@ async def startup_event() -> None:
 
     # 3. Инициализация узла под именем Сигом
     node = VolyaNode(node_dir=STORAGE_DIR, default_username="Сигом")
-    node.identity = get_player_identity(node.vault, "Сигом")
+    node.identity = get_player_identity(STORAGE_DIR, "Сигом")
+
 
 
 @app.on_event("shutdown")
@@ -156,7 +164,7 @@ async def broadcast_ws(message: Dict[str, Any]) -> None:
 
 
 def get_full_state_payload() -> Dict[str, Any]:
-    """Формирование полного снапшота состояния Живого Древа (DAG)."""
+    """Формирование полного снапшота состояния Вольного Древа (DAG)."""
     if not node or not dag_store:
         return {}
 
@@ -217,7 +225,7 @@ async def switch_identity(req: SwitchIdentityRequest) -> Dict[str, Any]:
         return {"success": False, "error": "Узел не инициализирован"}
 
     # Переключение или создание идентичности
-    node.identity = get_player_identity(node.vault, req.username)
+    node.identity = get_player_identity(STORAGE_DIR, req.username)
 
     # Если игрок с таким pubkey еще не зарегистрирован в Древе, регистрируем его
     if not node.dag_store.get_player(node.identity.pubkey):
@@ -459,7 +467,7 @@ async def login_endpoint(req: LoginRequest) -> Dict[str, Any]:
     if not username:
         return {"success": False, "error": "Пожалуйста, введите ваше вольное имя."}
     if node:
-        node.identity = get_player_identity(node.vault, username)
+        node.identity = get_player_identity(STORAGE_DIR, username)
         if dag_store and not dag_store.get_player(node.identity.pubkey):
             node.register_me(created_at=now_iso())
     token = f"token_{username}"

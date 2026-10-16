@@ -1,5 +1,5 @@
 """
-Сверхбыстрое локальное хранилище Живого Древа на базе RocksDB (LSM-Tree) и Merkle DAG.
+Сверхбыстрое локальное хранилище Вольного Древа на базе RocksDB (LSM-Tree) и Merkle DAG.
 Каждый узел (квест, капля потока, ресурс, инструмент, артефакт) сохраняется атомарно за доли миллисекунды.
 """
 
@@ -50,7 +50,7 @@ def _h_bytes(hex_str: str) -> bytes:
 
 
 class DagStore:
-    """Несокрушимое локальное хранилище Merkle DAG (Живого Древа)."""
+    """Несокрушимое локальное хранилище Merkle DAG (Вольного Древа)."""
 
     def __init__(self, db_path: str | Path = "portal_volya/storage/dag.rocksdb") -> None:
         self.db_path = Path(db_path)
@@ -247,7 +247,7 @@ class DagStore:
 
     def save_player(self, player: Player) -> None:
         p_key = player.pubkey.encode("utf-8")
-        self.db.put(p_key, ormsgpack.packb(player.model_dump()), self._h_players)
+        self._cf_players[p_key] = ormsgpack.packb(player.model_dump())
 
     # -----------------------------------------------------------------
     # Метаданные хранилища
@@ -258,7 +258,7 @@ class DagStore:
         return raw.decode("utf-8") if raw else None
 
     def set_meta(self, key: str, value: str) -> None:
-        self.db.put(key.encode("utf-8"), value.encode("utf-8"), self._h_meta)
+        self._cf_meta[key.encode("utf-8")] = value.encode("utf-8")
 
     # -----------------------------------------------------------------
     # Инициализация Первородного Древа (Генезис DAG)

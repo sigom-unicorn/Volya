@@ -6,7 +6,7 @@
             color: #ffffff; height: 100vh; display: flex; overflow: hidden; position: relative;
         }
 
-        /* Экран авторизации (Врата Живого Древа) */
+        /* Экран авторизации (Врата Вольного Древа) */
         #auth-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(8, 12, 16, 0.85); backdrop-filter: blur(16px);

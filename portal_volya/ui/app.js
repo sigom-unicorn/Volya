@@ -341,7 +341,7 @@
 
         function promptDeleteThread(threadId, threadTitle) {
             modalTitleText.innerText = "🗑️ Удаление беседы";
-            modalDescText.innerText = `Удалить беседу «${threadTitle}» и всю её историю из Живого Древа?`;
+            modalDescText.innerText = `Удалить беседу «${threadTitle}» и всю её историю из Вольного Древа?`;
             modalInputField.style.display = "none";
             modalConfirmBtn.innerText = "Удалить";
             modalConfirmBtn.className = "modal-btn confirm danger";

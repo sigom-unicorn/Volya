@@ -3,17 +3,20 @@
 """
 
 from portal_volya.storage.dag_store import DagStore
-from portal_volya.storage.vault import (
-    LocalVault,
+from portal_volya.storage.identity import (
     SovereignIdentity,
     create_flow_drop,
-    create_flow_message,
+    get_or_create_identity,
+    load_identity,
+    save_identity,
 )
 
 __all__ = [
     "DagStore",
-    "LocalVault",
     "SovereignIdentity",
     "create_flow_drop",
-    "create_flow_message",
+    "load_identity",
+    "save_identity",
+    "get_or_create_identity",
 ]
+

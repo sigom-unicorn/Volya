@@ -1,15 +1,25 @@
 """
-Криптографическое ядро и онтология Merkle DAG (Живого Древа) Вселенной «Воля».
+Криптографическое ядро и онтология Merkle DAG (Вольного Древа) Вселенной «Воля».
 """
 
 from portal_volya.core.crypto import (
+    ENCRYPTED_PREFIX,
     KeyPair,
     canonical_json_bytes,
+    decrypt_drop_content,
+    derive_conversation_key,
+    derive_dialogue_key,
+    ed25519_pub_to_x25519,
+    ed25519_seed_to_x25519_private,
+    encrypt_drop_content,
     hash_bytes,
     hash_canonical,
+    symmetric_decrypt,
+    symmetric_encrypt,
     verify_canonical,
     verify_signature,
 )
+from portal_volya.core.eira import build_eira_system_prompt, get_eira_player
 from portal_volya.core.genesis import (
     CANONICAL_CONSCIENCE_LADDER,
     CANONICAL_LADDER,
@@ -46,6 +56,15 @@ __all__ = [
     "canonical_json_bytes",
     "verify_canonical",
     "verify_signature",
+    "derive_dialogue_key",
+    "derive_conversation_key",
+    "symmetric_encrypt",
+    "symmetric_decrypt",
+    "encrypt_drop_content",
+    "decrypt_drop_content",
+    "ed25519_pub_to_x25519",
+    "ed25519_seed_to_x25519_private",
+    "ENCRYPTED_PREFIX",
     # Первородные семена и ступени
     "CANONICAL_LADDER",
     "CANONICAL_CONSCIENCE_LADDER",
@@ -71,4 +90,7 @@ __all__ = [
     "Role",
     "StepName",
     "TreeTier",
+    # Ядро Эйры
+    "build_eira_system_prompt",
+    "get_eira_player",
 ]
