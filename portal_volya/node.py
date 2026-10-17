@@ -34,6 +34,7 @@ from portal_volya.core.models import (
     DropKind,
     FlowDrop,
     FlowKind,
+    FlowSummary,
     Kon,
     Lad,
     Player,
@@ -366,19 +367,67 @@ class VolyaNode:
             parent_drop_id=parent_drop_id,
         )
 
-        # 2. Собираем историю диалога из Merkle DAG
-        drops = self.get_accessible_drops(target_flow_id)
-        history = []
-        for d in drops[:-1]:  # исключая текущую каплю
-            role = "assistant" if d.author_pubkey == eira_pk else "user"
-            history.append({"role": role, "content": d.content})
+        # 2. Проверяем память и необходимость сжатия (FlowSummary)
+        all_drops = self.get_accessible_drops(target_flow_id)
+        latest_summary = self.dag_store.get_latest_flow_summary(target_flow_id)
 
-        # 3. Запрос к разуму Эйры
+        # Пороговые параметры окна сотворчества
+        max_active_history = 12
+        summary_threshold = 15
+
+        # Определяем, какие капли ещё не сжаты (исключая текущую каплю игрока)
+        unsummarized_drops: list[FlowDrop] = []
+        if latest_summary:
+            found = False
+            for d in all_drops[:-1]:
+                if found:
+                    unsummarized_drops.append(d)
+                elif d.id == latest_summary.last_drop_id:
+                    found = True
+            if not found:
+                unsummarized_drops = all_drops[:-1]
+        else:
+            unsummarized_drops = all_drops[:-1]
+
+        # Если накопилось достаточно капель для кристаллизации памяти
+        if len(unsummarized_drops) >= summary_threshold:
+            msg_list = [
+                {
+                    "author_name": d.author_name,
+                    "role": "assistant" if d.author_pubkey == eira_pk else "user",
+                    "content": d.content,
+                }
+                for d in unsummarized_drops
+            ]
+            new_summary_text = self.eira.summarize_flow(
+                messages=msg_list,
+                previous_summary=latest_summary.summary if latest_summary else None,
+            )
+            latest_summary = FlowSummary(
+                summary=new_summary_text,
+                last_drop_id=unsummarized_drops[-1].id,
+                created_at=now_user,
+            )
+            self.dag_store.put_flow_summary(target_flow_id, latest_summary)
+
+        # 3. Формируем скользящее окно недавних капель (до max_active_history)
+        history_drops = all_drops[:-1]
+        if len(history_drops) > max_active_history:
+            history_drops = history_drops[-max_active_history:]
+
+        history = []
+        for d in history_drops:
+            role = "assistant" if d.author_pubkey == eira_pk else "user"
+            history.append({"role": role, "content": d.content, "author_name": d.author_name})
+
+        # 4. Запрос к разуму Эйры
         reply = self.eira.generate_reply(
             message=content,
             quest_id=target_quest_id,
+            flow_id=target_flow_id,
             flow_kind=FlowKind.DIALOGUE,
             interlocutor_pubkey=self.identity.pubkey,
+            flow_summary=latest_summary.summary if latest_summary else None,
             conversation_history=history,
         )
 

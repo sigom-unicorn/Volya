@@ -11,7 +11,7 @@ import pytest
 
 from portal_volya.core.crypto import KeyPair
 from portal_volya.core.genesis import EIRA_SEED, derive_genesis_keypair, ensure_genesis_tree
-from portal_volya.core.models import FlowKind
+from portal_volya.core.models import DropKind, FlowKind, FlowSummary
 from portal_volya.eira import EiraReply
 from portal_volya.node import VolyaNode
 from portal_volya.storage.identity import SovereignIdentity
@@ -122,3 +122,94 @@ def test_ask_eira_ephemeral(temp_volya_node):
         reply = node.ask_eira_ephemeral("Сколько капель у меня на балансе?", quest_id="quest-volya-root")
         assert reply.text == "Эфемерный ответ для быстрого осмысления."
         assert mock_gen.called
+
+
+def test_flow_summary_model_and_dag_store(temp_volya_node):
+    """Проверка модели FlowSummary и методов сохранения/извлечения в RocksDB."""
+    node = temp_volya_node
+    from portal_volya.core.models import FlowSummary
+
+    flow_id = "flow-test-summary-store"
+
+    # Сначала саммари нет
+    assert node.dag_store.get_latest_flow_summary(flow_id) is None
+    assert node.dag_store.get_flow_summaries(flow_id) == []
+
+    # Сохраняем первый кристалл памяти
+    s1 = FlowSummary(
+        summary="Начало пути. Обсудили понятие Лада.",
+        last_drop_id="drop-hash-001",
+        created_at="2026-10-17T18:00:00Z",
+    )
+    node.dag_store.put_flow_summary(flow_id, s1)
+
+    latest = node.dag_store.get_latest_flow_summary(flow_id)
+    assert latest is not None
+    assert latest.summary == "Начало пути. Обсудили понятие Лада."
+    assert latest.last_drop_id == "drop-hash-001"
+
+    # Сохраняем второй кристалл
+    s2 = FlowSummary(
+        summary="Продолжение. Договорились о сборке окна на PySide6.",
+        last_drop_id="drop-hash-020",
+        created_at="2026-10-17T19:00:00Z",
+    )
+    node.dag_store.put_flow_summary(flow_id, s2)
+
+    all_sums = node.dag_store.get_flow_summaries(flow_id)
+    assert len(all_sums) == 2
+    assert all_sums[0].last_drop_id == "drop-hash-001"
+    assert all_sums[1].last_drop_id == "drop-hash-020"
+
+    latest2 = node.dag_store.get_latest_flow_summary(flow_id)
+    assert latest2.last_drop_id == "drop-hash-020"
+
+
+def test_ask_eira_auto_summarization(temp_volya_node):
+    """
+    Проверка автоматического срабатывания сжатия памяти (FlowSummary),
+    когда число не сжатых капель в потоке превышает порог (summary_threshold=15).
+    """
+    node = temp_volya_node
+    flow_id = "flow-dialogue-eira-auto-sum"
+    quest_id = "quest-volya-root"
+
+    # Эмулируем накопление 16 капель в потоке
+    for i in range(16):
+        node.add_drop(
+            quest_id=quest_id,
+            flow_id=flow_id,
+            flow_kind=FlowKind.DIALOGUE,
+            kind=DropKind.TEXT,
+            content=f"Мысль номер {i}",
+            created_at=f"2026-10-17T18:{i:02d}:00Z",
+        )
+
+    mock_reply = EiraReply(
+        text="Я всё помню и готова созидать дальше.",
+        tools_called=[],
+    )
+
+    with patch.object(node.eira, "summarize_flow", return_value="Сжатый кристалл первых 16 капель") as mock_sum:
+        with patch.object(node.eira, "generate_reply", return_value=mock_reply) as mock_gen:
+            user_drop, eira_drop = node.ask_eira(
+                content="Эйра, подведи итог.",
+                quest_id=quest_id,
+                flow_id=flow_id,
+            )
+
+            # Проверяем, что сжатие вызвалось
+            assert mock_sum.called
+            # Проверяем, что кристалл памяти записан в RocksDB
+            latest = node.dag_store.get_latest_flow_summary(flow_id)
+            assert latest is not None
+            assert latest.summary == "Сжатый кристалл первых 16 капель"
+
+            # Проверяем, что generate_reply получил саммари и скользящее окно
+            assert mock_gen.called
+            call_kwargs = mock_gen.call_args.kwargs
+            assert call_kwargs["flow_summary"] == "Сжатый кристалл первых 16 капель"
+            # История не должна превышать max_active_history (12 капель)
+            history = call_kwargs["conversation_history"]
+            assert len(history) <= 12
+

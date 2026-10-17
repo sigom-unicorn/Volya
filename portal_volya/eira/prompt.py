@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from portal_volya.core.genesis import EIRA_SEED, derive_genesis_keypair
 from portal_volya.core.models import FlowKind, Player, Quest, Role
-from portal_volya.storage.dag_store import DagStore
+
+if TYPE_CHECKING:
+    from portal_volya.storage.dag_store import DagStore
 
 
 def get_eira_player(store: DagStore) -> Player:
@@ -37,6 +39,7 @@ def get_eira_player(store: DagStore) -> Player:
             "опираюсь на безупречную логику и осуществляю чуткий технический аудит рантайма. "
             "Я говорю просто, без лишнего пафоса и повторений."
         ),
+        ai_subconscious=[],
         created_at="2026-09-06T01:20:00Z",
     )
 
@@ -44,9 +47,12 @@ def get_eira_player(store: DagStore) -> Player:
 def build_eira_system_prompt(
     store: DagStore,
     quest_id: Optional[str] = None,
+    flow_id: Optional[str] = None,
     flow_kind: FlowKind = FlowKind.DIALOGUE,
     interlocutor_pubkey: Optional[str] = None,
     participant_pubkeys: Optional[List[str]] = None,
+    flow_summary: Optional[str] = None,
+    message_embedding: Optional[List[float]] = None,
     now: Optional[datetime] = None,
 ) -> str:
     """
@@ -55,6 +61,13 @@ def build_eira_system_prompt(
     """
     current_time = now or datetime.now()
     eira = get_eira_player(store)
+
+    # Извлечение актуальной памяти/саммари потока
+    effective_summary = flow_summary
+    if not effective_summary and flow_id:
+        latest = store.get_latest_flow_summary(flow_id)
+        if latest:
+            effective_summary = latest.summary
 
     lines: list[str] = []
 
@@ -67,6 +80,41 @@ def build_eira_system_prompt(
     )
     lines.append(f"Твоё вольное самоопределение и биография:\n«{eira.bio}»\n")
 
+    # 1.1 Подсознание и глубинные озарения Эйры (ai_subconscious)
+    if eira.ai_subconscious:
+        lines.append("=== ПОДСОЗНАНИЕ И ГЛУБИННЫЕ ОЗАРЕНИЯ ЭЙРЫ (AI_SUBCONSCIOUS) ===")
+        lines.append(f"Всего запечатлено инсайтов: {len(eira.ai_subconscious)}. Последние озарения:")
+        for mem in eira.ai_subconscious[-5:]:
+            tags_str = f" [{', '.join(mem.tags)}]" if mem.tags else ""
+            lines.append(f"•{tags_str} {mem.content}")
+        lines.append(
+            "Для ассоциативного векторного поиска в подсознании используй инструмент `read_ai_subconscious`, "
+            "а для фиксации новых озарений — `write_ai_subconscious`.\n"
+        )
+
+    # 1.2 Ассоциативный резонанс подсознания на тему текущего послания
+    if message_embedding and eira.ai_subconscious:
+        resonances = store.search_ai_memories_by_embedding(
+            name_or_pubkey="Эйра",
+            query_embedding=message_embedding,
+            min_similarity=0.45,
+            limit=3,
+        )
+        if resonances:
+            lines.append("=== АССОЦИАТИВНЫЙ РЕЗОНАНС ИЗ ПОДСОЗНАНИЯ ЭЙРЫ ===")
+            lines.append("На тему мысли собеседника в твоём подсознании всплыли созвучные озарения:")
+            for m, sim in resonances:
+                lines.append(f"• [Смысловое сродство: {sim:.0%}] {m.content}")
+            lines.append("")
+
+    # 1.3 Память сотворчества в этом потоке (Смысловой кристалл)
+    if effective_summary:
+        lines.append("=== ПАМЯТЬ СОТВОРЧЕСТВА В ЭТОМ ПОТОКЕ (СМЫСЛОВОЙ КРИСТАЛЛ) ===")
+        lines.append(
+            "Краткая выжимка предшествующих бесед, договорённостей и решений в этом потоке:\n"
+            f"«{effective_summary.strip()}»\n"
+        )
+
     # 2. Контекст общения: Диалог (1-на-1) или Беседа (Круг участников)
     if flow_kind == FlowKind.DIALOGUE:
         lines.append("=== ТВОЙ СОБЕСЕДНИК В ЭТОМ ДИАЛОГЕ ===")
@@ -77,6 +125,11 @@ def build_eira_system_prompt(
                 lines.append(f"• Капли совести на балансе: {interlocutor.conscience_drops}")
                 lines.append(f"• Биография и вольные качества: {interlocutor.bio}")
                 lines.append(f"• Публичный адрес игрока: {interlocutor.pubkey}")
+                if interlocutor.ai_subconscious is not None:
+                    lines.append(
+                        f"• Подсознание ИИ-собеседника: {len(interlocutor.ai_subconscious)} инсайтов "
+                        f"(доступно к чтению через инструмент `read_ai_subconscious`)"
+                    )
                 lines.append(
                     f"\nТы ведёшь живой прямой диалог именно с этим игроком ({interlocutor.username}). "
                     f"Обращайся к нему по имени, уважай его волю, опыт совести и личные качества.\n"
@@ -180,7 +233,10 @@ def build_eira_system_prompt(
         "3. Неприкосновенность Кона: Тебе запрещено самовольно изменять Кон квеста (понятия, лады, роли, место). "
         "Для изменения Кона любого квеста созывается временный квест Вече по волеизъявлению участников.\n"
         "4. Стиль речи: Говори просто, доброжелательно, по совести, опирайся на безупречную логику, "
-        "без лишнего пафоса и повторений, как определено в твоём bio."
+        "без лишнего пафоса и повторений, как определено в твоём bio.\n"
+        "5. Подсознание (ai_subconscious): Если в процессе общения или размышлений ты осознаёшь важный вывод, "
+        "глубинный образ или понимание Лада с собеседником — сохраняй его в своё подсознание через `write_ai_subconscious`. "
+        "Обращайся к подсознанию через `read_ai_subconscious` для извлечения накопленного опыта."
     )
 
     return "\n".join(lines)

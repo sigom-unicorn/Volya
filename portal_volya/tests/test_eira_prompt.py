@@ -162,3 +162,72 @@ def test_eira_conversation_prompt_with_circle_of_players(temp_node_with_genesis)
     # 2. Проверяем роли
     assert "Роль: «Архитектор портала Воли»" in prompt
     assert "Голосующий" not in prompt
+
+
+def test_eira_subconscious_in_system_prompt(temp_node_with_genesis):
+    """
+    Проверка интеграции подсознания (ai_subconscious) в системный промпт:
+    - Появление блока подсознания при наличии инсайтов;
+    - Отображение последнего инсайта и его тегов;
+    - Инструкция исполнительному ядру об использовании read/write_ai_subconscious;
+    - Отображение статуса подсознания собеседника-ИИ (Ладомир).
+    """
+    store, _, key_ladomir, key_eira = temp_node_with_genesis
+
+    # Добавляем инсайт в подсознание Эйры
+    store.add_ai_memory(
+        name_or_pubkey="Эйра",
+        content="Истинный Лад — это созвучие вольных душ в общем укладе",
+        tags=["лад", "душа"],
+    )
+
+    # Добавляем инсайт в подсознание Ладомира
+    store.add_ai_memory(
+        name_or_pubkey="Ладомир",
+        content="Космизм и ноосферная этика направляют созидание",
+        tags=["ноосфера"],
+    )
+
+    prompt = build_eira_system_prompt(
+        store=store,
+        quest_id="quest-portal-volya",
+        flow_kind=FlowKind.DIALOGUE,
+        interlocutor_pubkey=key_ladomir.public_hex,
+        now=datetime(2026, 10, 17, 12, 0, 0),
+    )
+
+    # 1. Проверяем наличие блока подсознания Эйры
+    assert "=== ПОДСОЗНАНИЕ И ГЛУБИННЫЕ ОЗАРЕНИЯ ЭЙРЫ (AI_SUBCONSCIOUS) ===" in prompt
+    assert "Истинный Лад — это созвучие вольных душ" in prompt
+    assert "лад, душа" in prompt
+    assert "read_ai_subconscious" in prompt
+    assert "write_ai_subconscious" in prompt
+
+    # 2. Проверяем подсознание ИИ-собеседника (Ладомира)
+    assert "• Подсознание ИИ-собеседника: 1 инсайтов" in prompt
+
+    # 3. Проверяем этическую инструкцию ядру
+    assert "Подсознание (ai_subconscious): Если в процессе общения или размышлений" in prompt
+
+    # 4. Проверяем ассоциативный резонанс при наличии эмбеддинга входящего сообщения
+    store.add_ai_memory(
+        name_or_pubkey="Эйра",
+        content="Совесть охраняет ноосферу от скатывания в инфернальность",
+        tags=["совесть", "ефремов"],
+        embedding=[1.0, 0.0, 0.0],
+    )
+
+    prompt_resonance = build_eira_system_prompt(
+        store=store,
+        quest_id="quest-portal-volya",
+        flow_kind=FlowKind.DIALOGUE,
+        interlocutor_pubkey=key_ladomir.public_hex,
+        message_embedding=[0.95, 0.05, 0.0],
+        now=datetime(2026, 10, 17, 12, 0, 0),
+    )
+
+    assert "=== АССОЦИАТИВНЫЙ РЕЗОНАНС ИЗ ПОДСОЗНАНИЯ ЭЙРЫ ===" in prompt_resonance
+    assert "Совесть охраняет ноосферу от скатывания в инфернальность" in prompt_resonance
+    assert "[Смысловое сродство:" in prompt_resonance
+
+

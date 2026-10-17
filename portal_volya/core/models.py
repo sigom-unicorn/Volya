@@ -154,8 +154,8 @@ class FlowDrop(BaseModel):
 class FlowSummary(BaseModel):
     """Смысловой кристалл длинного диалога, рождённый Эйрой."""
     summary: str
+    last_drop_id: str               # Blake3 хэш последней капли, по которую сжата память
     created_at: str
-    covered_message_count: int
 
 
 class QuestFlow(BaseModel):

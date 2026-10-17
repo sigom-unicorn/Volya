@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import gc
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import ormsgpack
 from rocksdict import ColumnFamily, Options, Rdict, WriteBatch
 
@@ -19,11 +21,13 @@ from portal_volya.core.crypto import (
     verify_signature,
 )
 from portal_volya.core.models import (
+    AIMemory,
     DagNode,
     DagNodeType,
     DropKind,
     FlowDrop,
     FlowKind,
+    FlowSummary,
     Kon,
     Lad,
     Player,
@@ -39,6 +43,7 @@ CF_DROPS = "flow_drops"         # drop_id (32b) -> binary FlowDrop
 CF_PLAYERS = "players"          # pubkey (64 hex chars) -> binary Player
 CF_TREE_LINKS = "tree_links"    # parent_id -> list of child_ids
 CF_FLOW_LINKS = "flow_links"    # flow_id -> list of drop_ids
+CF_SUMMARIES = "flow_summaries" # flow_id -> list of FlowSummary dicts
 CF_META = "dag_meta"            # служебные метаданные (root_id, stats)
 
 
@@ -67,6 +72,7 @@ class DagStore:
             CF_PLAYERS: Options(),
             CF_TREE_LINKS: Options(),
             CF_FLOW_LINKS: Options(),
+            CF_SUMMARIES: Options(),
             CF_META: Options(),
         }
 
@@ -78,6 +84,7 @@ class DagStore:
         self._cf_players = self.db.get_column_family(CF_PLAYERS)
         self._cf_tree = self.db.get_column_family(CF_TREE_LINKS)
         self._cf_flows = self.db.get_column_family(CF_FLOW_LINKS)
+        self._cf_summaries = self.db.get_column_family(CF_SUMMARIES)
         self._cf_meta = self.db.get_column_family(CF_META)
 
         self._h_nodes = self.db.get_column_family_handle(CF_NODES)
@@ -86,6 +93,7 @@ class DagStore:
         self._h_players = self.db.get_column_family_handle(CF_PLAYERS)
         self._h_tree = self.db.get_column_family_handle(CF_TREE_LINKS)
         self._h_flows = self.db.get_column_family_handle(CF_FLOW_LINKS)
+        self._h_summaries = self.db.get_column_family_handle(CF_SUMMARIES)
         self._h_meta = self.db.get_column_family_handle(CF_META)
 
     def close(self) -> None:
@@ -103,6 +111,7 @@ class DagStore:
                 self._cf_players = None
                 self._cf_tree = None
                 self._cf_flows = None
+                self._cf_summaries = None
                 self._cf_meta = None
                 self._h_nodes = None
                 self._h_quests = None
@@ -110,6 +119,7 @@ class DagStore:
                 self._h_players = None
                 self._h_tree = None
                 self._h_flows = None
+                self._h_summaries = None
                 self._h_meta = None
                 self.db = None
                 gc.collect()
@@ -230,6 +240,32 @@ class DagStore:
         return drops
 
     # -----------------------------------------------------------------
+    # Смысловые кристаллы памяти потоков (FlowSummary)
+    # -----------------------------------------------------------------
+
+    def put_flow_summary(self, flow_id: str, summary: FlowSummary) -> None:
+        """Сохранение нового кристалла сжатой памяти потока."""
+        flow_key = flow_id.encode("utf-8")
+        raw = self._cf_summaries.get(flow_key)
+        existing = ormsgpack.unpackb(raw) if raw else []
+        existing.append(summary.model_dump())
+        self._cf_summaries[flow_key] = ormsgpack.packb(existing)
+
+    def get_flow_summaries(self, flow_id: str) -> list[FlowSummary]:
+        """Получение всех кристаллов памяти потока в хронологическом порядке."""
+        flow_key = flow_id.encode("utf-8")
+        raw = self._cf_summaries.get(flow_key)
+        if not raw:
+            return []
+        items = ormsgpack.unpackb(raw)
+        return [FlowSummary(**item) for item in items]
+
+    def get_latest_flow_summary(self, flow_id: str) -> Optional[FlowSummary]:
+        """Получение последнего актуального саммари потока."""
+        summaries = self.get_flow_summaries(flow_id)
+        return summaries[-1] if summaries else None
+
+    # -----------------------------------------------------------------
     # Игроки
     # -----------------------------------------------------------------
 
@@ -248,6 +284,111 @@ class DagStore:
     def save_player(self, player: Player) -> None:
         p_key = player.pubkey.encode("utf-8")
         self._cf_players[p_key] = ormsgpack.packb(player.model_dump())
+
+    def get_player_by_name_or_pubkey(self, name_or_pubkey: str) -> Optional[Player]:
+        """Поиск игрока по публичному ключу или вольному имени (без учёта регистра)."""
+        target = name_or_pubkey.strip()
+        player = self.get_player(target)
+        if player:
+            return player
+        for p in self.get_all_players():
+            if p.username.strip().lower() == target.lower():
+                return p
+        return None
+
+    def add_ai_memory(
+        self,
+        name_or_pubkey: str,
+        content: str,
+        tags: Optional[list[str]] = None,
+        embedding: Optional[list[float]] = None,
+        created_at: Optional[str] = None,
+    ) -> Optional[AIMemory]:
+        """Добавление инсайта/мысли в подсознание (ai_subconscious) игрока ИИ с сохранением эмбеддинга."""
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player:
+            return None
+
+        if player.ai_subconscious is None:
+            if player.username in ("Эйра", "Ладомир") or "ии" in player.bio.lower():
+                player.ai_subconscious = []
+            else:
+                return None
+
+        clean_content = content.strip()
+        if not clean_content:
+            return None
+
+        now = created_at or datetime.now(timezone.utc).isoformat()
+        tag_list = tags or []
+        thought_id = hash_canonical({"content": clean_content, "created_at": now})
+
+        memory = AIMemory(
+            id=thought_id,
+            content=clean_content,
+            tags=tag_list,
+            embedding=embedding or [],
+            created_at=now,
+        )
+        player.ai_subconscious.append(memory)
+        self.save_player(player)
+        return memory
+
+    def search_ai_memories_by_embedding(
+        self,
+        name_or_pubkey: str,
+        query_embedding: list[float],
+        min_similarity: float = 0.3,
+        limit: int = 5,
+    ) -> list[tuple[AIMemory, float]]:
+        """
+        Семантический поиск ассоциаций в подсознании по вектору смыслового пространства (косинусное сходство).
+        Возвращает список пар (AIMemory, similarity_score), отсортированный по убыванию сродства.
+        """
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player or not player.ai_subconscious or not query_embedding:
+            return []
+
+        q_vec = np.array(query_embedding, dtype=np.float32)
+        q_norm = float(np.linalg.norm(q_vec))
+        if q_norm == 0.0:
+            return []
+
+        scored: list[tuple[AIMemory, float]] = []
+        for mem in player.ai_subconscious:
+            if not mem.embedding or len(mem.embedding) != len(query_embedding):
+                continue
+            m_vec = np.array(mem.embedding, dtype=np.float32)
+            m_norm = float(np.linalg.norm(m_vec))
+            if m_norm == 0.0:
+                continue
+            sim = float(np.dot(q_vec, m_vec) / (q_norm * m_norm))
+            if sim >= min_similarity:
+                scored.append((mem, sim))
+
+        # Сортируем по убыванию смыслового сродства
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:limit]
+
+    def get_ai_memories(
+        self,
+        name_or_pubkey: str,
+        tag: Optional[str] = None,
+        query: Optional[str] = None,
+    ) -> Optional[list[AIMemory]]:
+        """Получение инсайтов из подсознания игрока ИИ с опциональной фильтрацией."""
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player or player.ai_subconscious is None:
+            return None
+
+        memories = player.ai_subconscious
+        if tag and tag.strip():
+            clean_tag = tag.strip().lower()
+            memories = [m for m in memories if any(t.lower() == clean_tag for t in m.tags)]
+        if query and query.strip():
+            clean_query = query.strip().lower()
+            memories = [m for m in memories if clean_query in m.content.lower()]
+        return memories
 
     # -----------------------------------------------------------------
     # Метаданные хранилища
