@@ -100,22 +100,22 @@ class DriftingLeaf:
     def __init__(self, x: float, y: float) -> None:
         self.x = x
         self.y = y
-        self.vx = random.uniform(20.0, 48.0)       # Дрейф по ветру
-        self.vy = random.uniform(18.0, 38.0)       # Плавное планирование вниз
-        self.size = random.uniform(4.5, 9.5)       # Размер листочка
+        self.vx = random.uniform(12.0, 24.0)       # Неторопливый созерцательный дрейф
+        self.vy = random.uniform(10.0, 20.0)       # Плавное планирование вниз
+        self.size = random.uniform(3.5, 6.0)       # Изящный далёкий листочек
         self.angle = random.uniform(0.0, math.tau)
-        self.angular_vel = random.uniform(-2.8, 2.8)
+        self.angular_vel = random.uniform(-1.2, 1.2)
         self.flutter_phase = random.uniform(0.0, math.tau)
-        self.flutter_freq = random.uniform(1.8, 3.6)
+        self.flutter_freq = random.uniform(1.2, 2.4)
         self.is_alive = True
-        # 0: зелёный лист баньяна, 1: золотистый лепесток цветка
+        # 0: изумрудный лист баньяна, 1: золотистый лепесток цветка
         self.kind = 0 if random.random() < 0.75 else 1
 
     def update(self, dt: float, width: float, height: float) -> None:
         self.flutter_phase += dt * self.flutter_freq
         self.angle += self.angular_vel * dt
-        flutter_x = math.sin(self.flutter_phase) * 16.0
-        flutter_y = math.cos(self.flutter_phase * 0.75) * 8.0
+        flutter_x = math.sin(self.flutter_phase) * 12.0
+        flutter_y = math.cos(self.flutter_phase * 0.75) * 6.0
 
         self.x += (self.vx + flutter_x) * dt
         self.y += (self.vy + flutter_y) * dt
@@ -146,16 +146,16 @@ class AtmosphereEngine:
             CloudEntity(u=0.68, v=0.18, scale=0.95, speed=0.0070, sprite_idx=0),
         ]
 
-        # 35 парящих золотистых спор / пыльцы дубравы
+        # 9 редких парящих золотистых микроспор дубравы (ненавязчивые искорки)
         self.spores: list[FloatingSpore] = [
             FloatingSpore(random.uniform(0, 1920), random.uniform(100, 950))
-            for _ in range(35)
+            for _ in range(9)
         ]
 
-        # Порхающие листья и лепестки Баньяна на ветру
+        # Порхающие листья Баньяна на ветру (всего 2-4 штуки в кадре)
         self.leaves: list[DriftingLeaf] = [
-            DriftingLeaf(random.uniform(400, 1500), random.uniform(150, 750))
-            for _ in range(16)
+            DriftingLeaf(random.uniform(500, 1400), random.uniform(180, 550))
+            for _ in range(2)
         ]
         self._leaf_spawn_timer: float = 0.0
 
@@ -170,13 +170,13 @@ class AtmosphereEngine:
         for sp in self.spores:
             sp.update(dt, width, height)
 
-        # Обновление и появление новых листьев из кроны Баньяна
+        # Редкое, умиротворяющее появление нового листочка (максимум 4 штуки одновременно)
         self._leaf_spawn_timer += dt
-        if self._leaf_spawn_timer >= 0.45 and len(self.leaves) < 26:
+        if self._leaf_spawn_timer >= 5.5 and len(self.leaves) < 4:
             self._leaf_spawn_timer = 0.0
             # Спавн в границах кроны Баньяна
-            spawn_x = random.uniform(width * 0.22, width * 0.78)
-            spawn_y = random.uniform(height * 0.12, height * 0.42)
+            spawn_x = random.uniform(width * 0.32, width * 0.68)
+            spawn_y = random.uniform(height * 0.14, height * 0.35)
             self.leaves.append(DriftingLeaf(spawn_x, spawn_y))
 
         for leaf in self.leaves:
@@ -246,43 +246,48 @@ class AtmosphereEngine:
         painter.restore()
 
     def render_god_rays(self, painter: QPainter, width: int, height: int, current_hour: float, sun_x: float, sun_y: float, sun_elev: float) -> None:
-        """Отрисовка мягких солнечных лучей, пробивающихся сквозь крону."""
-        if sun_elev <= 0.18:
+        """
+        Отрисовка мягких солнечных лучей, пробивающихся сквозь крону.
+        Включаются только в ясный день при высоком солнце, не перекрывая солнечный диск.
+        На рассвете и закате отключаются, оставляя чистое шарообразное солнце с мягким bloom-ореолом.
+        """
+        # Лучи активны только при высоком полуденном солнце
+        if sun_elev < 0.45 or current_hour < 8.5 or current_hour > 16.2:
             return
 
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setPen(Qt.NoPen)
 
-        # Лучи веером исходят от Солнца
+        # Лучи веером исходят радиально от центра солнца
         rays_count = 7
-        base_alpha = int(28 * sun_elev)
-        color_start = QColor(255, 248, 220, base_alpha)
+        base_alpha = int(22 * sun_elev)
         color_end = QColor(255, 248, 220, 0)
 
         for i in range(rays_count):
             angle = (i - rays_count / 2) * 0.085 + math.sin(self.anim_time * 0.25 + i * 1.3) * 0.015
-            ray_len = height * 1.3
+            ray_len = height * 1.25
 
-            spread = 60.0 + i * 8.0
+            spread = 55.0 + i * 7.0
             dx = math.sin(angle) * ray_len
             dy = math.cos(angle) * ray_len
 
-            p0 = QPointF(sun_x - 15, sun_y)
-            p1 = QPointF(sun_x + 15, sun_y)
-            p2 = QPointF(sun_x + dx + spread, sun_y + dy)
-            p3 = QPointF(sun_x + dx - spread, sun_y + dy)
+            p0 = QPointF(sun_x, sun_y)
+            p1 = QPointF(sun_x + dx + spread, sun_y + dy)
+            p2 = QPointF(sun_x + dx - spread, sun_y + dy)
 
-            ray_grad = QLinearGradient(QPointF(sun_x, sun_y), QPointF(sun_x + dx, sun_y + dy))
-            ray_grad.setColorAt(0.0, color_start)
-            ray_grad.setColorAt(0.5, QColor(255, 248, 220, int(base_alpha * 0.4)))
+            ray_grad = QLinearGradient(p0, QPointF(sun_x + dx, sun_y + dy))
+            # Прозрачный зазор вокруг диска солнца (0.0 .. 0.12): лучи не срезают светило
+            ray_grad.setColorAt(0.0, QColor(255, 248, 220, 0))
+            ray_grad.setColorAt(0.12, QColor(255, 248, 220, 0))
+            ray_grad.setColorAt(0.35, QColor(255, 248, 220, base_alpha))
+            ray_grad.setColorAt(0.70, QColor(255, 248, 220, int(base_alpha * 0.4)))
             ray_grad.setColorAt(1.0, color_end)
 
             ray_path = QPainterPath()
             ray_path.moveTo(p0)
             ray_path.lineTo(p1)
             ray_path.lineTo(p2)
-            ray_path.lineTo(p3)
             ray_path.closeSubpath()
 
             painter.fillPath(ray_path, ray_grad)
@@ -290,27 +295,27 @@ class AtmosphereEngine:
         painter.restore()
 
     def render_spores(self, painter: QPainter, width: int, height: int, current_hour: float) -> None:
-        """Отрисовка парящих лесных спор и пыльцы дубравы."""
+        """Отрисовка редких парящих лесных спор и пыльцы дубравы."""
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setPen(Qt.NoPen)
 
         if 8.0 <= current_hour <= 16.5:
-            spore_color = QColor(255, 245, 195, 140)
-            halo_color = QColor(255, 240, 160, 45)
+            spore_color = QColor(255, 245, 195, 130)
+            halo_color = QColor(255, 240, 160, 40)
         elif 16.5 < current_hour <= 19.5:
-            spore_color = QColor(255, 210, 140, 155)
-            halo_color = QColor(255, 180, 80, 50)
+            spore_color = QColor(255, 210, 140, 140)
+            halo_color = QColor(255, 180, 80, 45)
         elif 5.0 <= current_hour < 8.0:
-            spore_color = QColor(255, 225, 200, 140)
-            halo_color = QColor(255, 190, 170, 45)
+            spore_color = QColor(255, 225, 200, 130)
+            halo_color = QColor(255, 190, 170, 40)
         else:
-            spore_color = QColor(190, 220, 245, 95)
-            halo_color = QColor(140, 180, 230, 25)
+            spore_color = QColor(190, 220, 245, 85)
+            halo_color = QColor(140, 180, 230, 20)
 
         for sp in self.spores:
             painter.setBrush(halo_color)
-            painter.drawEllipse(QPointF(sp.x, sp.y), sp.size * 2.4, sp.size * 2.4)
+            painter.drawEllipse(QPointF(sp.x, sp.y), sp.size * 2.2, sp.size * 2.2)
             painter.setBrush(spore_color)
             painter.drawEllipse(QPointF(sp.x, sp.y), sp.size, sp.size)
 
@@ -325,16 +330,16 @@ class AtmosphereEngine:
         # Вычисление цвета и прозрачности световых переливов по времени суток
         if 8.0 <= current_hour <= 16.5:
             # Дневные блики солнца сквозь листву
-            breath_col = QColor(255, 255, 225, 22)
+            breath_col = QColor(255, 255, 225, 18)
         elif 16.5 < current_hour <= 19.5:
             # Закатные медово-розовые переливы
-            breath_col = QColor(255, 205, 150, 26)
+            breath_col = QColor(255, 205, 150, 22)
         elif 5.0 <= current_hour < 8.0:
             # Рассветные золотисто-персиковые отсветы
-            breath_col = QColor(255, 228, 195, 24)
+            breath_col = QColor(255, 228, 195, 20)
         else:
             # Ночные лунные серебристые отблески на верхушках ветвей
-            breath_col = QColor(185, 220, 255, 14)
+            breath_col = QColor(185, 220, 255, 12)
 
         # 6 органических фокусов кроны Баньяна для моделирования волн ветра
         canopy_nodes = [
@@ -352,9 +357,9 @@ class AtmosphereEngine:
 
         for u, v, rx_base, ry_base, phase in canopy_nodes:
             # Плавное колыхание ветви на горном бризе
-            dx = math.sin(t * 0.85 + phase) * 7.0 * scale_x
-            dy = math.cos(t * 0.65 + phase * 0.7) * 4.0 * scale_y
-            pulse = 0.88 + 0.12 * math.sin(t * 1.1 + phase)
+            dx = math.sin(t * 0.85 + phase) * 6.0 * scale_x
+            dy = math.cos(t * 0.65 + phase * 0.7) * 3.5 * scale_y
+            pulse = 0.90 + 0.10 * math.sin(t * 1.1 + phase)
 
             cx = u * width + dx
             cy = v * height + dy
@@ -372,7 +377,7 @@ class AtmosphereEngine:
         painter.restore()
 
     def render_drifting_leaves(self, painter: QPainter, width: int, height: int, current_hour: float) -> None:
-        """Отрисовка опадающих и порхающих на ветру листочков и лепестков Баньяна."""
+        """Отрисовка редких опадающих и порхающих на ветру листочков и лепестков Баньяна."""
         if not self.leaves:
             return
 
@@ -380,19 +385,19 @@ class AtmosphereEngine:
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setPen(Qt.NoPen)
 
-        # Подбор оттенков листвы и лепестков по времени суток
+        # Подбор мягких полупрозрачных оттенков листвы и лепестков по времени суток
         if 8.0 <= current_hour <= 16.5:
-            col_leaf = QColor(86, 148, 62, 215)
-            col_petal = QColor(245, 215, 125, 225)
+            col_leaf = QColor(86, 148, 62, 160)
+            col_petal = QColor(245, 215, 125, 175)
         elif 16.5 < current_hour <= 19.5:
-            col_leaf = QColor(145, 130, 52, 215)
-            col_petal = QColor(255, 175, 95, 225)
+            col_leaf = QColor(145, 130, 52, 160)
+            col_petal = QColor(255, 175, 95, 175)
         elif 5.0 <= current_hour < 8.0:
-            col_leaf = QColor(105, 155, 75, 215)
-            col_petal = QColor(255, 205, 150, 225)
+            col_leaf = QColor(105, 155, 75, 160)
+            col_petal = QColor(255, 205, 150, 175)
         else:
-            col_leaf = QColor(48, 92, 78, 160)
-            col_petal = QColor(160, 195, 220, 170)
+            col_leaf = QColor(48, 92, 78, 120)
+            col_petal = QColor(160, 195, 220, 130)
 
         for leaf in self.leaves:
             painter.save()

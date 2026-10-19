@@ -198,32 +198,39 @@ class CelestialEngine:
     def get_sun_position(self, width: float, height: float) -> Tuple[float, float, float]:
         """
         Координаты Солнца (x, y) и высота над горизонтом (0.0..1.0).
-        Согласовано с 4K-картинами:
-        Восход (рассвет) — на востоке СПРАВА за горами (x ~ 0.86, y ~ 0.40).
-        Полдень (зенит) — в верхней точке над кроной (x ~ 0.50, y ~ 0.12).
-        Закат — на западе СЛЕВА за горизонтом (x ~ 0.10, y ~ 0.48).
+        Согласовано с ландшафтом Баньяна:
+        Восход (рассвет) — на востоке СПРАВА за горами (x ~ 0.90, y ~ 0.355).
+        Полдень (зенит) — огибает крону Баньяна СВЕРХУ в чистом поднебесье (x ~ 0.50, y ~ 0.035).
+        Закат — на западе СЛЕВА за горизонтом (x ~ 0.10, y ~ 0.355).
         """
         h = self.current_hour
         if 5.0 <= h <= 20.0:
-            progress = (h - 5.0) / 15.0 # 0.0 .. 1.0 (восход -> закат)
+            progress = (h - 5.0) / 15.0  # 0.0 .. 1.0 (восход -> закат)
             # Солнце движется справа налево (с востока на запад)
-            x = width * (0.86 - 0.76 * progress)
-            sin_p = math.sin(math.pi * progress)
-            y = height * (0.46 - 0.34 * sin_p)
-            elevation = sin_p
-            return x, y, elevation
+            x_norm = 0.90 - 0.80 * progress
+            dx = x_norm - 0.50
+            # Параболическая небесная дуга над куполом кроны Баньяна
+            y_norm = 0.035 + 2.0 * (dx * dx)
+            elevation = math.sin(math.pi * progress)
+            return width * x_norm, height * y_norm, elevation
         return width * 0.5, height * 1.5, 0.0
 
     def get_moon_position(self, width: float, height: float) -> Tuple[float, float, float]:
-        """Координаты Луны (x, y) и высота (0.0..1.0)."""
+        """
+        Координаты Луны (x, y) и высота (0.0..1.0).
+        Луна восходит на востоке (справа) и огибает крону дерева сверху в зените ночи.
+        """
         h = self.current_hour
-        moon_h = (h - 19.0) % 24.0
-        if moon_h <= 11.5:
-            progress = moon_h / 11.5
-            sin_p = math.sin(math.pi * progress)
-            x = width * (0.16 + 0.68 * progress)
-            y = height * (0.40 - 0.24 * sin_p)
-            return x, y, sin_p
+        # Цикл ночной видимости: с 18:30 (18.5) до 06:30 (6.5 следующего дня)
+        moon_h = (h - 18.5) % 24.0
+        if moon_h <= 12.0:
+            progress = moon_h / 12.0  # 0.0 .. 1.0 (восход -> заход)
+            x_norm = 0.90 - 0.80 * progress
+            dx = x_norm - 0.50
+            # Небесная дуга Луны огибает крону Баньяна сверху
+            y_norm = 0.035 + 2.0 * (dx * dx)
+            elevation = math.sin(math.pi * progress)
+            return width * x_norm, height * y_norm, elevation
         return width * 0.5, height * 1.5, 0.0
 
     def render_stars_and_meteors(self, painter: QPainter, width: int, height: int, night_factor: float) -> None:
