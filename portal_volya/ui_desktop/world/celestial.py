@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 import random
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QRadialGradient
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QRadialGradient
 
 
 class Star:
@@ -277,4 +277,202 @@ class CelestialEngine:
             painter.setPen(pen)
             painter.drawLine(QPointF(tail_x, tail_y), QPointF(head_x, head_y))
 
+        painter.restore()
+
+    def get_lunar_phase(self) -> Tuple[float, str]:
+        """
+        Вычисляет реальную астрономическую фазу Луны (0.0 .. 1.0) и её название.
+        0.0 / 1.0 - Новолуние
+        0.25      - Первая четверть (освещена справа)
+        0.50      - Полнолуние (полный диск)
+        0.75      - Последняя четверть (освещена слева)
+        """
+        ref_new_moon = datetime(2024, 1, 11, 11, 57, tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        diff_days = (now - ref_new_moon).total_seconds() / 86400.0
+        synodic_month = 29.53058867
+        phase = (diff_days % synodic_month) / synodic_month
+
+        if phase < 0.03 or phase > 0.97:
+            name = "Новолуние"
+        elif phase < 0.22:
+            name = "Молодая Луна (растущий серп)"
+        elif phase < 0.28:
+            name = "Первая четверть"
+        elif phase < 0.47:
+            name = "Прибывающая Луна"
+        elif phase < 0.53:
+            name = "Полнолуние"
+        elif phase < 0.72:
+            name = "Убывающая Луна"
+        elif phase < 0.78:
+            name = "Последняя четверть"
+        else:
+            name = "Старая Луна (убывающий серп)"
+
+        return phase, name
+
+    def _build_moon_phase_path(self, cx: float, cy: float, r: float, phase: float) -> QPainterPath:
+        """Построение точной геометрической маски освещённой части Луны в 2D."""
+        path = QPainterPath()
+        phase = phase % 1.0
+
+        # Полнолуние — полный круг
+        if 0.48 <= phase <= 0.52:
+            path.addEllipse(QPointF(cx, cy), r, r)
+            return path
+
+        # Новолуние — невидимый диск
+        if phase <= 0.02 or phase >= 0.98:
+            return path
+
+        if phase < 0.5:
+            # Растущая Луна: освещён правый полукруг
+            path.moveTo(cx, cy - r)
+            path.arcTo(QRectF(cx - r, cy - r, 2 * r, 2 * r), 90, -180)
+
+            # Терминатор от низа (cx, cy + r) к верху (cx, cy - r)
+            term_x_radius = r * math.cos(math.pi * (phase / 0.5))
+            if term_x_radius >= 0:
+                # Растущий серп
+                path.arcTo(QRectF(cx - term_x_radius, cy - r, 2 * term_x_radius, 2 * r), 270, 180)
+            else:
+                # Растущая горбатая
+                abs_rx = abs(term_x_radius)
+                path.arcTo(QRectF(cx - abs_rx, cy - r, 2 * abs_rx, 2 * r), 270, -180)
+        else:
+            # Убывающая Луна: освещён левый полукруг
+            path.moveTo(cx, cy - r)
+            path.arcTo(QRectF(cx - r, cy - r, 2 * r, 2 * r), 90, 180)
+
+            rel_phase = (phase - 0.5) / 0.5
+            term_x_radius = r * math.cos(math.pi * rel_phase)
+            if term_x_radius >= 0:
+                # Убывающая горбатая
+                abs_rx = abs(term_x_radius)
+                path.arcTo(QRectF(cx - abs_rx, cy - r, 2 * abs_rx, 2 * r), 270, 180)
+            else:
+                # Убывающий серп
+                abs_rx = abs(term_x_radius)
+                path.arcTo(QRectF(cx - abs_rx, cy - r, 2 * abs_rx, 2 * r), 270, -180)
+
+        path.closeSubpath()
+        return path
+
+    def render_sun(self, painter: QPainter, width: int, height: int) -> None:
+        """Отрисовка динамического Солнца с адаптивным спектром и мягким ореолом Bloom."""
+        sun_x, sun_y, elevation = self.get_sun_position(width, height)
+        if elevation <= 0.01:
+            return
+
+        h = self.current_hour
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+
+        # Вычисление спектра в зависимости от фазы суток
+        if h < 7.5:
+            # Рассвет: тёплое персиково-золотистое ядро
+            core_col = QColor(255, 240, 215, int(255 * elevation))
+            inner_col = QColor(255, 180, 80, int(190 * elevation))
+            outer_col = QColor(255, 100, 50, 0)
+            flare_col = QColor(255, 160, 60, int(85 * elevation))
+        elif h > 16.5:
+            # Закат: пламенное медово-рубиновое солнце
+            t = min(1.0, max(0.0, (h - 16.5) / 2.5))
+            r = int(255)
+            g = int(230 - 110 * t)
+            b = int(160 - 130 * t)
+            core_col = QColor(r, g, b, int(255 * elevation))
+            inner_col = QColor(255, 120, 40, int(210 * elevation))
+            outer_col = QColor(220, 50, 30, 0)
+            flare_col = QColor(255, 90, 40, int(95 * elevation))
+        else:
+            # Зенит / ясный полдень: сияющее бело-золотое солнце
+            core_col = QColor(255, 255, 245, 255)
+            inner_col = QColor(255, 240, 160, int(185 * elevation))
+            outer_col = QColor(255, 215, 120, 0)
+            flare_col = QColor(255, 235, 170, int(75 * elevation))
+
+        sun_radius = max(18.0, width * 0.017)
+
+        # 1. Внешний мягкий рассеянный ореол (Atmospheric Bloom)
+        bloom_rad = sun_radius * 8.5
+        bloom_grad = QRadialGradient(QPointF(sun_x, sun_y), bloom_rad)
+        bloom_grad.setColorAt(0.0, flare_col)
+        bloom_grad.setColorAt(0.40, QColor(flare_col.red(), flare_col.green(), flare_col.blue(), flare_col.alpha() // 3))
+        bloom_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.setBrush(bloom_grad)
+        painter.drawEllipse(QPointF(sun_x, sun_y), bloom_rad, bloom_rad)
+
+        # 2. Яркая корона светила
+        corona_rad = sun_radius * 2.8
+        corona_grad = QRadialGradient(QPointF(sun_x, sun_y), corona_rad)
+        corona_grad.setColorAt(0.0, inner_col)
+        corona_grad.setColorAt(0.55, QColor(inner_col.red(), inner_col.green(), inner_col.blue(), inner_col.alpha() // 2))
+        corona_grad.setColorAt(1.0, outer_col)
+        painter.setBrush(corona_grad)
+        painter.drawEllipse(QPointF(sun_x, sun_y), corona_rad, corona_rad)
+
+        # 3. Ослепительно яркое ядро светила
+        core_grad = QRadialGradient(QPointF(sun_x, sun_y), sun_radius)
+        core_grad.setColorAt(0.0, core_col)
+        core_grad.setColorAt(0.70, inner_col)
+        core_grad.setColorAt(1.0, QColor(inner_col.red(), inner_col.green(), inner_col.blue(), 120))
+        painter.setBrush(core_grad)
+        painter.drawEllipse(QPointF(sun_x, sun_y), sun_radius, sun_radius)
+
+        painter.restore()
+
+    def render_moon(self, painter: QPainter, width: int, height: int, night_factor: float) -> None:
+        """Отрисовка Луны с реальной астрономической фазой, пепельным светом и серебристой короной."""
+        if night_factor <= 0.05:
+            return
+
+        moon_x, moon_y, elevation = self.get_moon_position(width, height)
+        if elevation <= 0.01:
+            return
+
+        phase, _ = self.get_lunar_phase()
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+
+        moon_radius = max(16.0, width * 0.015)
+        moon_alpha = int(255 * night_factor * elevation)
+
+        # 1. Серебристая лунная корона (мягкое сияние в ночном небе)
+        corona_rad = moon_radius * 4.4
+        corona_grad = QRadialGradient(QPointF(moon_x, moon_y), corona_rad)
+        corona_grad.setColorAt(0.0, QColor(215, 235, 255, int(95 * night_factor * elevation)))
+        corona_grad.setColorAt(0.40, QColor(170, 205, 245, int(35 * night_factor * elevation)))
+        corona_grad.setColorAt(1.0, QColor(15, 25, 45, 0))
+        painter.setBrush(corona_grad)
+        painter.drawEllipse(QPointF(moon_x, moon_y), corona_rad, corona_rad)
+
+        # 2. Пепельный свет (Earthshine) — тонкое таинственное очертание теневой стороны Луны
+        painter.setBrush(QColor(18, 28, 48, int(150 * night_factor * elevation)))
+        painter.drawEllipse(QPointF(moon_x, moon_y), moon_radius, moon_radius)
+
+        # 3. Освещённая часть Луны с учётом реальной фазы
+        painter.save()
+        moon_path = self._build_moon_phase_path(moon_x, moon_y, moon_radius, phase)
+        if not moon_path.isEmpty():
+            painter.setClipPath(moon_path)
+
+            # Жемчужный градиент лунного диска
+            disk_grad = QRadialGradient(QPointF(moon_x - moon_radius * 0.2, moon_y - moon_radius * 0.2), moon_radius * 1.2)
+            disk_grad.setColorAt(0.0, QColor(250, 252, 255, moon_alpha))
+            disk_grad.setColorAt(0.70, QColor(222, 234, 250, moon_alpha))
+            disk_grad.setColorAt(1.0, QColor(190, 210, 235, moon_alpha))
+            painter.setBrush(disk_grad)
+            painter.drawEllipse(QPointF(moon_x, moon_y), moon_radius, moon_radius)
+
+            # Лунные моря (мягкие текстурные пятна)
+            painter.setBrush(QColor(160, 182, 210, int(65 * night_factor * elevation)))
+            painter.drawEllipse(QPointF(moon_x + moon_radius * 0.15, moon_y - moon_radius * 0.2), moon_radius * 0.35, moon_radius * 0.28)
+            painter.drawEllipse(QPointF(moon_x - moon_radius * 0.2, moon_y + moon_radius * 0.15), moon_radius * 0.32, moon_radius * 0.25)
+            painter.drawEllipse(QPointF(moon_x + moon_radius * 0.1, moon_y + moon_radius * 0.3), moon_radius * 0.22, moon_radius * 0.20)
+
+        painter.restore()
         painter.restore()

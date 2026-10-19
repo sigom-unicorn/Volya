@@ -205,7 +205,8 @@ class GlassControlPill(QFrame):
         elif 17.0 <= h < 20.5:
             phase = "🌇 Закат"
         else:
-            phase = "🌙 Ночь"
+            _, moon_name = self.world_widget.canvas.celestial.get_lunar_phase()
+            phase = f"🌙 {moon_name}"
 
         mode_str = " (Локальное)" if self.world_widget.canvas.celestial.use_realtime else ""
         self.lbl_time.setText(f"{phase} {hours:02d}:{minutes:02d}{mode_str}")

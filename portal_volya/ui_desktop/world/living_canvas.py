@@ -80,8 +80,8 @@ class LivingWorldCanvas:
         self._scaled_pixmaps: dict[str, QPixmap] = {}
 
         # Поэтапные переключатели слоёв живого мира (по шагам плана)
-        self.enable_celestial: bool = False   # Этап 2: Солнце, Луна, звёзды, метеоры
-        self.enable_atmosphere: bool = False  # Этап 2: Облака, лучи, пыльца
+        self.enable_celestial: bool = True   # Этап 2: Солнце, Луна, звёзды, метеоры
+        self.enable_atmosphere: bool = True  # Этап 2: Облака, лучи, листва, пыльца
         self.enable_water: bool = False       # Этап 3: Ручей, струи, блики, лепестки
         self.enable_creatures: bool = False   # Этап 4: Птицы, олени, странники, светлячки
 
@@ -113,7 +113,10 @@ class LivingWorldCanvas:
         self.last_tick_time = now
 
         self.celestial.update(dt)
-        w, h = 1920.0, 1080.0
+        vw, vh = self._cached_viewport
+        w = float(vw if vw > 0 else 1920)
+        h = float(vh if vh > 0 else 1080)
+
         if self.enable_atmosphere:
             self.atmosphere.update(dt, w, h)
         if self.enable_water:
@@ -149,30 +152,26 @@ class LivingWorldCanvas:
             painter.restore()
 
         # =============================================================
-        # ЭТАП 2: Небо, Светила и Атмосфера (включается на Этапе 2)
+        # ЭТАП 2: Небо, Светила и Атмосфера
         # =============================================================
         if self.enable_celestial:
+            # 1. Живые мерцающие звёзды и метеоры ночного неба
             self.celestial.render_stars_and_meteors(painter, width, height, night_factor)
+            # 2. Дневное Светило — Солнце (восход, зенит, закат с ореолом Bloom)
+            self.celestial.render_sun(painter, width, height)
+            # 3. Ночное Светило — Луна (с реальной фазой, пепельным светом и короной)
+            self.celestial.render_moon(painter, width, height, night_factor)
 
         if self.enable_atmosphere:
+            # 4. Дрейфующие полупрозрачные облака с адаптивной подсветкой
             self.atmosphere.render_clouds(painter, width, height, current_hour)
+            # 5. Солнечные лучи сквозь крону (God Rays)
             sun_x, sun_y, sun_elev = self.celestial.get_sun_position(width, height)
             self.atmosphere.render_god_rays(painter, width, height, current_hour, sun_x, sun_y, sun_elev)
-
-        # =============================================================
-        # ЭТАП 3: Живой Ручей (включается на Этапе 3)
-        # =============================================================
-        if self.enable_water:
-            self.water.render_stream(painter, width, height, current_hour, night_factor)
-
-        # =============================================================
-        # ЭТАП 4: Обитатели и Дыхание леса (включается на Этапе 4)
-        # =============================================================
-        if self.enable_creatures:
-            self.creatures.render_birds(painter)
-            self.creatures.render_wildlife_and_wanderers(painter, height)
-            self.creatures.render_fireflies(painter, width, height, night_factor)
-
-        if self.enable_atmosphere:
+            # 6. Дыхание и шелест листвы Баньяна на ветру
+            self.atmosphere.render_canopy_breath(painter, width, height, current_hour)
+            # 7. Порхающие листочки и лепестки Баньяна
+            self.atmosphere.render_drifting_leaves(painter, width, height, current_hour)
+            # 8. Парящие лесные споры и золотистая пыльца
             self.atmosphere.render_spores(painter, width, height, current_hour)
 
