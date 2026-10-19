@@ -23,25 +23,44 @@ from PySide6.QtGui import (
 )
 
 
-def _generate_cloud_pixmap(seed: int, width: int = 500, height: int = 240, puffs: int = 70) -> QPixmap:
-    """Генерирует мягкий процедурный спрайт кучевого облака с гауссовым размытием."""
+def _generate_cloud_pixmap(seed: int, width: int = 640, height: int = 300, puffs: int = 65) -> QPixmap:
+    """
+    Генерирует мягкий процедурный спрайт кучевого облака с гауссовым размытием.
+    Гарантирует абсолютный 0 альфы на всех четырёх границах текстуры, исключая полосы и швы на небе.
+    """
     im = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(im)
     rnd = random.Random(seed)
 
-    # Кластеры мягких перекрывающихся кругов
+    cx_center = width * 0.5
+    cy_center = height * 0.52
+
+    # Кластеры мягких перекрывающихся кругов строго во внутренней безопасной зоне
     for _ in range(puffs):
-        cx = rnd.gauss(width * 0.5, width * 0.20)
-        cy = rnd.gauss(height * 0.52, height * 0.16)
-        r = rnd.uniform(22.0, 52.0)
+        cx = rnd.gauss(cx_center, width * 0.14)
+        cy = rnd.gauss(cy_center, height * 0.12)
+        r = rnd.uniform(24.0, 52.0)
         alpha = rnd.randint(22, 50)
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255, alpha))
 
-    # Смягчение плоского низа, характерного для кучевых облаков
-    draw.rectangle([0, int(height * 0.78), width, height], fill=(0, 0, 0, 0))
+    # Гауссово размытие для естественных диффузных краёв
+    im = im.filter(ImageFilter.GaussianBlur(15))
 
-    # Гауссово размытие для естественных диффузных краев
-    im = im.filter(ImageFilter.GaussianBlur(16))
+    # Радиально-эллиптическая маска затухания к границам: гарантирует строгий ноль на всех краях
+    pix = im.load()
+    w_half = width * 0.5
+    h_half = height * 0.5
+    for y in range(height):
+        ny = (y - h_half) / (h_half * 0.86)
+        for x in range(width):
+            nx = (x - w_half) / (w_half * 0.86)
+            dist = math.sqrt(nx * nx + ny * ny)
+            if dist >= 1.0:
+                pix[x, y] = (255, 255, 255, 0)
+            elif dist > 0.60:
+                fade = 0.5 * (1.0 + math.cos(math.pi * (dist - 0.60) / 0.40))
+                r_c, g_c, b_c, a_c = pix[x, y]
+                pix[x, y] = (r_c, g_c, b_c, int(a_c * fade))
 
     # Конвертируем PIL RGBA в QPixmap
     data = im.tobytes("raw", "RGBA")
@@ -132,9 +151,9 @@ class AtmosphereEngine:
 
         # Предварительная генерация 3 уникальных мягких облачных текстур
         self.cloud_sprites: list[QPixmap] = [
-            _generate_cloud_pixmap(seed=101, width=520, height=240, puffs=75),
-            _generate_cloud_pixmap(seed=202, width=440, height=200, puffs=60),
-            _generate_cloud_pixmap(seed=303, width=600, height=260, puffs=90),
+            _generate_cloud_pixmap(seed=101, width=640, height=300, puffs=65),
+            _generate_cloud_pixmap(seed=202, width=540, height=260, puffs=55),
+            _generate_cloud_pixmap(seed=303, width=720, height=320, puffs=75),
         ]
 
         # 5 облаков на разных планах неба (параллакс)
@@ -206,8 +225,8 @@ class AtmosphereEngine:
             dawn_factor = (8.0 - current_hour) / 3.0
             tint = QColor(255, int(210 - 20 * dawn_factor), int(190 - 20 * dawn_factor), 220)
         else:
-            # Ночь: лунный серебристо-сизый оттенок
-            tint = QColor(110, 135, 185, 130)
+            # Ночь: нежная серебристо-сизая лунная дымка
+            tint = QColor(110, 135, 185, 45)
 
         for sprite in self.cloud_sprites:
             t_pix = QPixmap(sprite.size())
