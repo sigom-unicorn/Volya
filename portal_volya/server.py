@@ -14,15 +14,12 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from portal_volya.core.models import Kon, Role, StepName
 from portal_volya.node import VolyaNode
 
 # Рабочие директории
-UI_DIR = Path(__file__).resolve().parent / "ui"
 STORAGE_DIR = Path(__file__).resolve().parent / "storage"
 
 app = FastAPI(title="Суверенный Узел «Воля»", version="2.0.0")
@@ -615,23 +612,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             active_websockets.remove(websocket)
 
 
-# ============================================================================
-# Статические файлы интерфейса
-# ============================================================================
-
-app.mount("/images", StaticFiles(directory=str(UI_DIR / "images")), name="images")
-
-
-@app.get("/style.css")
-async def get_style() -> FileResponse:
-    return FileResponse(UI_DIR / "style.css", media_type="text/css")
-
-
-@app.get("/app.js")
-async def get_js() -> FileResponse:
-    return FileResponse(UI_DIR / "app.js", media_type="application/javascript")
-
-
 @app.get("/")
-async def get_index() -> FileResponse:
-    return FileResponse(UI_DIR / "index.html", media_type="text/html")
+async def get_root_status() -> Dict[str, Any]:
+    return {
+        "status": "active",
+        "service": "Суверенный Узел «Воля»",
+        "version": "2.0.0",
+        "timestamp": now_iso(),
+    }
