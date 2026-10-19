@@ -25,17 +25,17 @@ class LivingWorldCanvas:
     """Компонент живого мира поляны для полноэкранного нативного рендеринга."""
 
     PHASE_FILENAMES = {
-        "dawn": "баньян_утро.png",
-        "day": "баньян_день.png",
-        "sunset": "баньян_вечер.png",
-        "night": "баньян_ночь.png",
+        "dawn": ["баньян_утро.webp", "баньян_утро.png"],
+        "day": ["баньян_день.webp", "баньян_день.png"],
+        "sunset": ["баньян_вечер.webp", "баньян_вечер.png"],
+        "night": ["баньян_ночь.webp", "баньян_ночь.png"],
     }
 
     FALLBACK_FILENAMES = {
-        "dawn": "banyan_4k_dawn.png",
-        "day": "banyan_4k_day.png",
-        "sunset": "banyan_4k_sunset.png",
-        "night": "banyan_4k_night.png",
+        "dawn": ["banyan_4k_dawn.webp", "banyan_4k_dawn.png"],
+        "day": ["banyan_4k_day.webp", "banyan_4k_day.png"],
+        "sunset": ["banyan_4k_sunset.webp", "banyan_4k_sunset.png"],
+        "night": ["banyan_4k_night.webp", "banyan_4k_night.png"],
     }
 
     def __init__(self, images_dir: Optional[Path] = None) -> None:
@@ -53,16 +53,27 @@ class LivingWorldCanvas:
 
         fallback_dir = Path(__file__).parent.parent / "assets" / "images"
 
-        # Загрузка мастер-текстур четырёх фаз
+        # Загрузка мастер-текстур четырёх фаз (WebP -> PNG)
         self._master_pixmaps: dict[str, QPixmap] = {}
-        for phase, fname in self.PHASE_FILENAMES.items():
-            path = images_dir / fname
-            if not path.exists():
-                path = fallback_dir / self.FALLBACK_FILENAMES[phase]
-            if path.exists():
-                self._master_pixmaps[phase] = QPixmap(str(path))
-            else:
-                self._master_pixmaps[phase] = QPixmap()
+        for phase, fnames in self.PHASE_FILENAMES.items():
+            pixmap = QPixmap()
+            # 1. Проверяем основную папку (ui/images)
+            for fname in fnames:
+                p = images_dir / fname
+                if p.exists():
+                    pixmap = QPixmap(str(p))
+                    if not pixmap.isNull():
+                        break
+            # 2. Если не найдено, проверяем fallback_dir (assets/images)
+            if pixmap.isNull():
+                fb_fnames = self.FALLBACK_FILENAMES.get(phase, [])
+                for fname in fb_fnames:
+                    p = fallback_dir / fname
+                    if p.exists():
+                        pixmap = QPixmap(str(p))
+                        if not pixmap.isNull():
+                            break
+            self._master_pixmaps[phase] = pixmap
 
         # Кэш масштабированных под текущее разрешение экрана текстур
         self._cached_viewport: Tuple[int, int] = (0, 0)
