@@ -137,7 +137,7 @@ class GlassControlPill(QFrame):
 
         # Кнопки быстрых фаз
         btn_dawn = QPushButton("🌅 Рассвет")
-        btn_dawn.clicked.connect(lambda: self._set_hour(6.2))
+        btn_dawn.clicked.connect(lambda: self._set_hour(6.1))
         layout.addWidget(btn_dawn)
 
         btn_noon = QPushButton("☀️ День")
@@ -145,7 +145,7 @@ class GlassControlPill(QFrame):
         layout.addWidget(btn_noon)
 
         btn_sunset = QPushButton("🌇 Закат")
-        btn_sunset.clicked.connect(lambda: self._set_hour(18.8))
+        btn_sunset.clicked.connect(lambda: self._set_hour(18.3))
         layout.addWidget(btn_sunset)
 
         btn_night = QPushButton("🌙 Ночь")
@@ -198,11 +198,11 @@ class GlassControlPill(QFrame):
         minutes = int((h - hours) * 60)
 
         # Эмодзи фазы
-        if 5.0 <= h < 7.5:
+        if 5.5 <= h < 7.5:
             phase = "🌅 Рассвет"
         elif 7.5 <= h < 17.0:
             phase = "☀️ День"
-        elif 17.0 <= h < 20.5:
+        elif 17.0 <= h < 18.8:
             phase = "🌇 Закат"
         else:
             _, moon_name = self.world_widget.canvas.celestial.get_lunar_phase()
