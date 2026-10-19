@@ -48,10 +48,10 @@ class LivingWorldCanvas:
 
         # Поиск директории с 4K картинами
         if images_dir is None:
-            # 1. Основная папка ui/images
-            images_dir = Path(__file__).parent.parent.parent / "ui" / "images"
+            # Основная папка ассетов живого мира десктопного портала
+            images_dir = Path(__file__).parent.parent / "assets" / "images"
 
-        fallback_dir = Path(__file__).parent.parent / "assets" / "images"
+        fallback_dir = Path(__file__).parent.parent.parent / "ui" / "images"
 
         # Загрузка мастер-текстур четырёх фаз (WebP -> PNG)
         self._master_pixmaps: dict[str, QPixmap] = {}
