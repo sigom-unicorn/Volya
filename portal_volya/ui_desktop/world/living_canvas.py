@@ -94,6 +94,12 @@ class LivingWorldCanvas:
 
         self._scaled_canopy_mask: Optional[QImage] = None
 
+        # Поэтапные переключатели слоёв живого мира (по шагам плана)
+        self.enable_celestial: bool = True   # Этап 2: Солнце, Луна, звёзды, метеоры
+        self.enable_atmosphere: bool = True  # Этап 2: Облака, лучи, листва, пыльца
+        self.enable_water: bool = False       # Этап 3: Ручей, струи, блики, лепестки
+        self.enable_creatures: bool = False   # Этап 4: Птицы, олени, странники, светлячки
+
     @staticmethod
     def _generate_canopy_mask(day_image_path: str) -> QImage:
         """Автономная генерация 4K альфа-маски кроны Баньяна из дневного полотна."""
@@ -118,12 +124,6 @@ class LivingWorldCanvas:
         mask_arr = np.zeros((h, w, 4), dtype=np.uint8)
         mask_arr[:, :, 3] = np.clip(alpha, 0, 255).astype(np.uint8)
         return QImage(mask_arr.data, w, h, w * 4, QImage.Format_ARGB32).copy()
-
-        # Поэтапные переключатели слоёв живого мира (по шагам плана)
-        self.enable_celestial: bool = True   # Этап 2: Солнце, Луна, звёзды, метеоры
-        self.enable_atmosphere: bool = True  # Этап 2: Облака, лучи, листва, пыльца
-        self.enable_water: bool = False       # Этап 3: Ручей, струи, блики, лепестки
-        self.enable_creatures: bool = False   # Этап 4: Птицы, олени, странники, светлячки
 
     def _ensure_viewport_cache(self, width: int, height: int) -> None:
         """Предварительное масштабирование четырёх фаз при изменении размера окна."""
