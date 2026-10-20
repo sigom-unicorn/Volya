@@ -24,3 +24,4 @@ scratch*.txt
 
 # Тяжёлые исходные PNG-полотна (в репозиторий идут идентичные 4K WebP)
 portal_volya/ui_desktop/assets/images/*.png
+portal_volya/ui_desktop/assets/images/tree_canopy_mask.*

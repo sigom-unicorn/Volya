@@ -444,7 +444,15 @@ class CelestialEngine:
 
         painter.restore()
 
-    def render_moon(self, painter: QPainter, width: int, height: int, night_factor: float) -> None:
+    def render_moon(
+        self,
+        painter: QPainter,
+        width: int,
+        height: int,
+        night_factor: float,
+        canopy_mask: Optional[QImage] = None,
+        draw_offset: Tuple[int, int] = (0, 0),
+    ) -> None:
         """
         Отрисовка Луны с реальной астрономической фазой, едва угадываемой тёмной стороной,
         мягким естественным контуром и точным затенением кроной Баньяна (Occlusion).
@@ -548,7 +556,31 @@ class CelestialEngine:
 
         p_buf.end()
 
-        # 6. Вывод Луны на основной холст
+        # 6. Затенение кроной Великого Баньяна (Occlusion):
+        # Пиксели Луны, перекрываемые ветвями дерева, становятся полностью прозрачными
+        if canopy_mask is not None and not canopy_mask.isNull():
+            draw_x, draw_y = draw_offset
+            ox = dst_x - draw_x
+            oy = dst_y - draw_y
+
+            patch = QImage(buf_size, buf_size, QImage.Format_ARGB32_Premultiplied)
+            patch.fill(0)
+
+            mask_rect = QRectF(0, 0, canopy_mask.width(), canopy_mask.height())
+            buf_rect = QRectF(ox, oy, buf_size, buf_size)
+            intersect = mask_rect.intersected(buf_rect)
+
+            if not intersect.isEmpty():
+                p_patch = QPainter(patch)
+                p_patch.drawImage(QPointF(intersect.x() - ox, intersect.y() - oy), canopy_mask, intersect)
+                p_patch.end()
+
+                p_cut = QPainter(moon_buf)
+                p_cut.setCompositionMode(QPainter.CompositionMode_DestinationOut)
+                p_cut.drawImage(0, 0, patch)
+                p_cut.end()
+
+        # 7. Вывод Луны на основной холст
         painter.save()
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         painter.drawImage(dst_x, dst_y, moon_buf)
