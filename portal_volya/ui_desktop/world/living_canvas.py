@@ -18,7 +18,7 @@ from PySide6.QtGui import QImage, QPainter, QPixmap
 from portal_volya.ui_desktop.world.atmosphere import AtmosphereEngine
 from portal_volya.ui_desktop.world.celestial import CelestialEngine
 from portal_volya.ui_desktop.world.creatures import CreaturesEngine
-from portal_volya.ui_desktop.world.water import WaterStreamEngine
+from portal_volya.ui_desktop.world.water import WaterFlowShaderEngine
 
 
 class LivingWorldCanvas:
@@ -41,10 +41,10 @@ class LivingWorldCanvas:
     def __init__(self, images_dir: Optional[Path] = None) -> None:
         self.celestial = CelestialEngine()
         self.atmosphere = AtmosphereEngine()
-        self.water = WaterStreamEngine()
         self.creatures = CreaturesEngine()
 
         self.last_tick_time = time.perf_counter()
+        self.anim_time: float = 0.0
 
         # Поиск директории с 4K картинами
         if images_dir is None:
@@ -52,6 +52,9 @@ class LivingWorldCanvas:
             images_dir = Path(__file__).parent.parent / "assets" / "images"
 
         fallback_dir = Path(__file__).parent.parent.parent / "ui" / "images"
+
+        # Шейдерный двигатель живой воды (Путь А — GPU Flow Map)
+        self.water = WaterFlowShaderEngine(images_dir)
 
         # Загрузка мастер-текстур четырёх фаз (WebP -> PNG)
         self._master_pixmaps: dict[str, QPixmap] = {}
@@ -97,7 +100,7 @@ class LivingWorldCanvas:
         # Поэтапные переключатели слоёв живого мира (по шагам плана)
         self.enable_celestial: bool = True   # Этап 2: Солнце, Луна, звёзды, метеоры
         self.enable_atmosphere: bool = True  # Этап 2: Облака, лучи, листва, пыльца
-        self.enable_water: bool = False       # Этап 3: Ручей, струи, блики, лепестки
+        self.enable_water: bool = True       # Этап 3: Ручей, струи, блики, лепестки
         self.enable_creatures: bool = False   # Этап 4: Птицы, олени, странники, светлячки
 
     @staticmethod
@@ -160,6 +163,7 @@ class LivingWorldCanvas:
         dt = now - self.last_tick_time
         dt = min(0.1, max(0.001, dt))
         self.last_tick_time = now
+        self.anim_time += dt
 
         self.celestial.update(dt)
         vw, vh = self._cached_viewport
@@ -168,39 +172,63 @@ class LivingWorldCanvas:
 
         if self.enable_atmosphere:
             self.atmosphere.update(dt, w, h)
-        if self.enable_water:
-            self.water.update(dt)
         if self.enable_creatures:
             self.creatures.update(dt, w, h)
 
-    def render(self, painter: QPainter, width: int, height: int) -> None:
-        """Отрисовка всех слоёв живого мира в строгом порядке глубины."""
-        self._ensure_viewport_cache(width, height)
+    def initialize_gl(self, context) -> bool:
+        """Инициализация GPU шейдера живой воды."""
+        return self.water.initialize_gl(context)
 
-        current_hour = self.celestial.current_hour
+    def cleanup(self) -> None:
+        """Освобождение GPU ресурсов холста."""
+        if self.water and hasattr(self.water, "cleanup"):
+            self.water.cleanup()
+
+    def render_flow_background(self, width: int, height: int) -> Tuple[bool, int, int]:
+        """Отрисовка живого пейзажа Баньяна с текущей водой на GPU."""
         base_phase, next_phase, blend_factor, night_factor = self.celestial.get_phase_blending()
+        current_hour = self.celestial.current_hour
+        return self.water.render_flow_background(
+            width,
+            height,
+            base_phase,
+            next_phase,
+            blend_factor,
+            self.anim_time,
+            current_hour,
+            night_factor,
+        )
 
-        # =============================================================
-        # ЭТАП 1: Бесшовный фотореалистичный 4K-ландшафт Великого Баньяна
-        # =============================================================
+    def render_base_landscape(self, painter: QPainter, width: int, height: int) -> Tuple[int, int]:
+        """Отрисовка статического/перетекающего 4K полотна на CPU (fallback)."""
+        self._ensure_viewport_cache(width, height)
+        base_phase, next_phase, blend_factor, _ = self.celestial.get_phase_blending()
+
         base_pixmap = self._scaled_pixmaps.get(base_phase)
-        draw_x = 0
-        draw_y = 0
+        draw_x, draw_y = 0, 0
         if base_pixmap and not base_pixmap.isNull():
             draw_x = (width - base_pixmap.width()) // 2
-            draw_y = height - base_pixmap.height() # Прижимаем к низу поляны
+            draw_y = height - base_pixmap.height()
 
             painter.save()
             painter.setOpacity(1.0)
             painter.drawPixmap(draw_x, draw_y, base_pixmap)
 
-            # Плавное наложение перетекающей фазы суток
             if next_phase and blend_factor > 0.001:
                 next_pixmap = self._scaled_pixmaps.get(next_phase)
                 if next_pixmap and not next_pixmap.isNull():
                     painter.setOpacity(blend_factor)
                     painter.drawPixmap(draw_x, draw_y, next_pixmap)
             painter.restore()
+
+        return draw_x, draw_y
+
+    def render_layers(self, painter: QPainter, width: int, height: int, draw_offset: Tuple[int, int] = (0, 0)) -> None:
+        """Отрисовка динамических слоёв поверх пейзажа: светила, атмосфера, шелест листвы."""
+        self._ensure_viewport_cache(width, height)
+        current_hour = self.celestial.current_hour
+        _, _, _, night_factor = self.celestial.get_phase_blending()
+        draw_x, draw_y = draw_offset
 
         # =============================================================
         # ЭТАП 2: Небо, Светила и Атмосфера
@@ -228,8 +256,11 @@ class LivingWorldCanvas:
             self.atmosphere.render_god_rays(painter, width, height, current_hour, sun_x, sun_y, sun_elev)
             # 6. Дыхание и шелест листвы Баньяна на ветру
             self.atmosphere.render_canopy_breath(painter, width, height, current_hour)
-            # 7. Порхающие листочки и лепестки Баньяна
-            self.atmosphere.render_drifting_leaves(painter, width, height, current_hour)
-            # 8. Парящие лесные споры и золотистая пыльца
+            # 7. Парящие лесные споры и золотистая пыльца
             self.atmosphere.render_spores(painter, width, height, current_hour)
+
+    def render(self, painter: QPainter, width: int, height: int) -> None:
+        """Полный цикл рендеринга на CPU (при отсутствии OpenGL)."""
+        draw_x, draw_y = self.render_base_landscape(painter, width, height)
+        self.render_layers(painter, width, height, (draw_x, draw_y))
 

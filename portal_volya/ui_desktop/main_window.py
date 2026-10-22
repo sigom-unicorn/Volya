@@ -17,7 +17,9 @@ from PySide6.QtGui import (
     QKeyEvent,
     QPainter,
     QPaintEvent,
+    QSurfaceFormat,
 )
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -32,38 +34,74 @@ from PySide6.QtWidgets import (
 
 from portal_volya.ui_desktop.world.living_canvas import LivingWorldCanvas
 
+# Настройка формата OpenGL 3.3 Core Profile для шейдера живой воды
+_gl_fmt = QSurfaceFormat()
+_gl_fmt.setVersion(3, 3)
+_gl_fmt.setProfile(QSurfaceFormat.CoreProfile)
+QSurfaceFormat.setDefaultFormat(_gl_fmt)
 
-class LivingWorldWidget(QWidget):
-    """Полноэкранный холст с активным игровым циклом анимации живого мира."""
+
+class LivingWorldWidget(QOpenGLWidget):
+    """Полноэкранный холст с активным игровым циклом анимации живого мира (GPU Flow Map + QPainter)."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.canvas = LivingWorldCanvas()
+        self.gl_ready = False
 
-        # Настройка таймера анимации (35-40 FPS, плавно и легко для процессора)
+        # Настройка таймера анимации (60 FPS, плавная физика текущей воды)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_tick)
-        self.timer.start(25) # ~40 FPS
+        self.timer.start(16) # ~60 FPS
 
         # Режим авто-прокрутки суток (для демонстрации смены дня и ночи)
         self.auto_cycle = False
         self.cycle_speed = 0.5 # часов в секунду
 
+    def initializeGL(self) -> None:
+        self.gl_ready = self.canvas.initialize_gl(self.context())
+
     def _on_tick(self) -> None:
         if self.auto_cycle and not self.canvas.celestial.use_realtime:
             # Продвигаем время вперёд
             self.canvas.celestial.simulated_hour = (
-                self.canvas.celestial.simulated_hour + 0.025 * self.cycle_speed
+                self.canvas.celestial.simulated_hour + 0.016 * self.cycle_speed
             ) % 24.0
 
         self.canvas.update()
         self.update()
 
-    def paintEvent(self, event: QPaintEvent) -> None:
+    def paintGL(self) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        self.canvas.render(painter, self.width(), self.height())
+
+        shader_success = False
+        draw_x, draw_y = 0, 0
+
+        # 1. GPU Shader: Живое течение реки на 4K-полотне Баньяна
+        if self.gl_ready and self.canvas.enable_water:
+            painter.beginNativePainting()
+            shader_success, draw_x, draw_y = self.canvas.render_flow_background(
+                self.width(), self.height()
+            )
+            painter.endNativePainting()
+
+        # Fallback на CPU-полотна, если GPU-шейдер недоступен
+        if not shader_success:
+            draw_x, draw_y = self.canvas.render_base_landscape(
+                painter, self.width(), self.height()
+            )
+
+        # 2. QPainter поверх фона: Светила, Луна с маской кроны, облака, атмосфера
+        self.canvas.render_layers(painter, self.width(), self.height(), (draw_x, draw_y))
         painter.end()
+
+    def closeEvent(self, event) -> None:
+        if self.isValid():
+            self.makeCurrent()
+            self.canvas.cleanup()
+            self.doneCurrent()
+        super().closeEvent(event)
 
 
 class GlassControlPill(QFrame):
@@ -268,3 +306,8 @@ class VolyaLivingWindow(QMainWindow):
             self.lbl_hint.setVisible(self.control_pill.isVisible())
         else:
             super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:
+        if hasattr(self, "world_widget") and self.world_widget:
+            self.world_widget.close()
+        super().closeEvent(event)
