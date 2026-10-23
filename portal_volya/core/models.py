@@ -4,7 +4,7 @@
 Природная иерархия:
 1. Корень: Первичный квест «Воля» (Исток, parent_quest_id = None).
 2. Дочерние квесты Корня:
-   - Корневые квесты: «Корневой Дом», «Портал Воли»...
+   - Корневые квесты: «Корневой Дом», «Портал Воли», «Посвящение»...
    - Стволовые квесты: «Вольницы» (территориальные и духовные общины).
 3. Ветви (дочерние квесты Стволов-Вольниц):
    - «Дом», «Склад», «Дары природы», «Мастерская», «Гончарка», «Театр»...
@@ -53,7 +53,7 @@ class ConscienceStep(BaseModel):
 
 class TreeTier(str, Enum):
     ROOT = "Корень"                 # Первичный квест «Воля» (Исток, parent_quest_id = None)
-    ROOT_CHILD = "Корневой"         # «Корневой Дом», «Портал Воли»...
+    ROOT_CHILD = "Корневой"         # «Корневой Дом», «Портал Воли», «Посвящение»...
     TRUNK = "Ствол"                 # «Вольницы» (общины вольных людей)
     BRANCH = "Ветвь"                # «Дом», «Склад», «Дары природы», «Мастерская», «Гончарка», «Театр»...
 
@@ -185,12 +185,21 @@ class AIMemory(BaseModel):
     created_at: str
 
 
+class PlayerRoleAssignment(BaseModel):
+    """Назначение роли игроку внутри квеста."""
+    quest_id: str
+    role_title: str
+    assigned_at: str
+
+
 class Player(BaseModel):
     """Вольный игрок — свободен от чинов, рангов и ступеней."""
     pubkey: str                                             # Ed25519 публичный ключ (шестнадцатеричный)
     username: str                                           # Вольное имя
-    conscience_drops: int = 0                               # Баланс капель совести (опыт совместной гармоничной жизни)
+    conscience_drops: int = 0                               # Баланс капель совести в Чаше Души
     bio: str = ""
+    avatar_hash: Optional[str] = None                       # Blake3 хэш аватарки в хранилище блобов
+    roles: list[PlayerRoleAssignment] = Field(default_factory=list) # Назначенные роли игрока в квестах
     google_api_key: Optional[str] = None                    # Суверенный API ключ Google для общения с Эйрой
     ai_subconscious: Optional[list[AIMemory]] = None        # Личное подсознание (только для игроков ИИ)
     created_at: str
@@ -241,6 +250,7 @@ __all__ = [
     "QuestFlow",
     # Игрок
     "Player",
+    "PlayerRoleAssignment",
     "AIMemory",
     # Merkle DAG
     "DagNodeType",

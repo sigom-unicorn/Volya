@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from portal_volya.node import VolyaNode
+from portal_volya.ui_desktop.profile_pill import GlassPlayerPill
 from portal_volya.ui_desktop.world.living_canvas import LivingWorldCanvas
 
 # Настройка формата OpenGL 3.3 Core Profile для шейдера живой воды
@@ -258,17 +260,25 @@ class GlassControlPill(QFrame):
 class VolyaLivingWindow(QMainWindow):
     """Главное окно суверенного портала «Воля»."""
 
-    def __init__(self) -> None:
+    def __init__(self, node: Optional[VolyaNode] = None) -> None:
         super().__init__()
         self.setWindowTitle("Воля — Обитель Вольного Духа у Великого Баньяна")
         self.resize(1360, 840)
         self.setMinimumSize(1024, 640)
 
+        # Суверенный локальный узел Вольного Древа
+        self._own_node = node is None
+        self.node = node if node is not None else VolyaNode()
+
         # Центральный живой холст
         self.world_widget = LivingWorldWidget(self)
         self.setCentralWidget(self.world_widget)
 
-        # Парящая панель управления внизу
+        # Парящий профиль игрока в верхнем левом углу (Аватар, Капли, Роль, Смена)
+        self.player_pill = GlassPlayerPill(self.node, self)
+        self.player_pill.adjustSize()
+
+        # Парящая панель управления внизу (Время суток, Светила, Цикл)
         self.control_pill = GlassControlPill(self.world_widget, self)
         self.control_pill.adjustSize()
 
@@ -284,6 +294,9 @@ class VolyaLivingWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        # Профиль игрока в верхнем левом углу
+        self.player_pill.move(24, 24)
+
         # Центрируем панель управления внизу экрана
         pill_w = self.control_pill.width()
         pill_h = self.control_pill.height()
@@ -301,13 +314,17 @@ class VolyaLivingWindow(QMainWindow):
             else:
                 self.showFullScreen()
         elif event.key() == Qt.Key_H:
-            # Переключение видимости панели
-            self.control_pill.setVisible(not self.control_pill.isVisible())
-            self.lbl_hint.setVisible(self.control_pill.isVisible())
+            # Переключение видимости панелей
+            is_vis = not self.control_pill.isVisible()
+            self.control_pill.setVisible(is_vis)
+            self.player_pill.setVisible(is_vis)
+            self.lbl_hint.setVisible(is_vis)
         else:
             super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
         if hasattr(self, "world_widget") and self.world_widget:
             self.world_widget.close()
+        if self._own_node and hasattr(self, "node") and self.node:
+            self.node.close()
         super().closeEvent(event)

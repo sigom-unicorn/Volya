@@ -50,14 +50,18 @@ def test_genesis_tree_structure(temp_dag_store):
     assert root.parent_quest_id is None
     assert root.title == "Воля"
 
-    # 2. Проверяем дочерний квест корня: «Портал Воли»
+    # 2. Проверяем дочерние квесты корня: «Портал Воли» и «Посвящение»
     root_children = store.get_child_quests("quest-volya-root")
     titles = [q.title for q in root_children]
-    assert len(root_children) == 1
+    assert len(root_children) == 2
     assert "Портал Воли" in titles
-    portal = root_children[0]
+    assert "Посвящение" in titles
+    portal = next(q for q in root_children if q.id == "quest-portal-volya")
     assert portal.tier == TreeTier.ROOT_CHILD
     assert portal.parent_quest_id == root.id
+    init_q = next(q for q in root_children if q.id == "quest-posvyashchenie")
+    assert init_q.tier == TreeTier.ROOT_CHILD
+    assert init_q.parent_quest_id == root.id
 
 
 def test_flow_drops_with_resource_tool_artifact(temp_dag_store):

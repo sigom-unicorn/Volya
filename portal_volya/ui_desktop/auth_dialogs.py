@@ -1,0 +1,634 @@
+"""
+Модальные окна авторизации, выбора игрока, ввода ПИН-кода и создания Неофита (Glassmorphism).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from PySide6.QtCore import QByteArray, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QIcon,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+)
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
+
+from portal_volya.node import VolyaNode
+from portal_volya.storage.device_identities import DevicePlayerIdentity
+from portal_volya.ui_desktop.avatar_generator import (
+    generate_default_avatar_png,
+    process_custom_avatar_png,
+)
+
+
+def make_circular_pixmap(data: bytes, size: int = 48) -> QPixmap:
+    """Создаёт идеально круглый QPixmap из байтов PNG/JPG."""
+    img = QImage()
+    img.loadFromData(data)
+    if img.isNull():
+        # Fallback на пустой серый круг
+        img = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+        img.fill(QColor("#1b2a47"))
+
+    scaled = img.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+
+    target = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+    target.fill(Qt.transparent)
+
+    painter = QPainter(target)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    path = QPainterPath()
+    path.addEllipse(0, 0, size, size)
+    painter.setClipPath(path)
+    painter.drawImage(0, 0, scaled)
+    painter.end()
+
+    return QPixmap.fromImage(target)
+
+
+# Базовый стиль для стеклянных окон
+GLASS_DIALOG_STYLE = """
+QDialog {
+    background: transparent;
+}
+#glassModalCard {
+    background: rgba(14, 20, 36, 0.90);
+    border: 1.5px solid rgba(212, 175, 55, 0.40);
+    border-radius: 18px;
+}
+QLabel {
+    color: #e2e8f0;
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
+}
+QLineEdit {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #f8fafc;
+    font-size: 13px;
+}
+QLineEdit:focus {
+    border: 1px solid #d4af37;
+    background: rgba(255, 255, 255, 0.12);
+}
+QPushButton {
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 10px;
+    color: #f8fafc;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(212, 175, 55, 0.60);
+}
+QPushButton:pressed {
+    background: rgba(255, 255, 255, 0.32);
+}
+QPushButton#primaryBtn {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1b4332, stop:1 #2d6a4f);
+    border: 1.2px solid #d4af37;
+    color: #fefae0;
+    font-weight: 600;
+}
+QPushButton#primaryBtn:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2d6a4f, stop:1 #40916c);
+    border-color: #fefae0;
+}
+"""
+
+
+class PinCodeModal(QDialog):
+    """Модальное окно ввода 4-значного ПИН-кода игрока."""
+
+    authenticated = Signal()
+
+    def __init__(self, identity: DevicePlayerIdentity, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.identity = identity
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet(GLASS_DIALOG_STYLE)
+        self.resize(360, 320)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setObjectName("glassModalCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(14)
+
+        # Заголовок
+        lbl_lock = QLabel("🔒 Вход защищён ПИН-кодом")
+        lbl_lock.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        lbl_lock.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_lock)
+
+        lbl_sub = QLabel(f"Игрок: <strong>{self.identity.username}</strong>")
+        lbl_sub.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_sub)
+
+        # Поле ввода ПИН-кода
+        self.pin_input = QLineEdit()
+        self.pin_input.setEchoMode(QLineEdit.Password)
+        self.pin_input.setMaxLength(4)
+        self.pin_input.setAlignment(Qt.AlignCenter)
+        self.pin_input.setFont(QFont("Segoe UI", 20, QFont.Bold))
+        self.pin_input.setPlaceholderText("••••")
+        self.pin_input.textChanged.connect(self._on_pin_changed)
+        card_layout.addWidget(self.pin_input)
+
+        self.lbl_error = QLabel("")
+        self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
+        self.lbl_error.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(self.lbl_error)
+
+        # Кнопки
+        btn_layout = QHBoxLayout()
+        btn_cancel = QPushButton("Отмена")
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_cancel)
+
+        btn_submit = QPushButton("Войти")
+        btn_submit.setObjectName("primaryBtn")
+        btn_submit.clicked.connect(self._verify)
+        btn_layout.addWidget(btn_submit)
+
+        card_layout.addLayout(btn_layout)
+        main_layout.addWidget(card)
+
+    def _on_pin_changed(self, text: str) -> None:
+        self.lbl_error.setText("")
+        if len(text.strip()) == 4:
+            self._verify()
+
+    def _verify(self) -> None:
+        pin = self.pin_input.text().strip()
+        if self.identity.verify_pin(pin):
+            self.authenticated.emit()
+            self.accept()
+        else:
+            self.lbl_error.setText("Неверный ПИН-код. Попробуйте снова.")
+            self.pin_input.selectAll()
+            self.pin_input.setFocus()
+
+
+class PlayerCardWidget(QFrame):
+    """Карточка выбора игрока в списке Врат Воли."""
+
+    clicked = Signal(str) # pubkey
+
+    def __init__(
+        self,
+        node: VolyaNode,
+        identity: DevicePlayerIdentity,
+        is_active: bool = False,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.identity = identity
+        self.is_active = is_active
+        self.setCursor(Qt.PointingHandCursor)
+
+        border_color = "rgba(212, 175, 55, 0.70)" if is_active else "rgba(255, 255, 255, 0.15)"
+        bg_color = "rgba(212, 175, 55, 0.15)" if is_active else "rgba(255, 255, 255, 0.05)"
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 12px;
+                padding: 6px;
+            }}
+            QFrame:hover {{
+                background: rgba(255, 255, 255, 0.14);
+                border-color: #d4af37;
+            }}
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 12, 8)
+        layout.setSpacing(12)
+
+        # Аватар
+        avatar_bytes = node.get_player_avatar_bytes(identity.pubkey)
+        if not avatar_bytes:
+            avatar_bytes = generate_default_avatar_png(identity.username, identity.pubkey)
+        pix = make_circular_pixmap(avatar_bytes, size=46)
+        lbl_avatar = QLabel()
+        lbl_avatar.setPixmap(pix)
+        lbl_avatar.setFixedSize(46, 46)
+        layout.addWidget(lbl_avatar)
+
+        # Инфо: Имя, капли, роль
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
+
+        p = node.dag_store.get_player(identity.pubkey)
+        drops_count = p.conscience_drops if p else 0
+
+        # Роль
+        role_title = "Вольный игрок"
+        if p and p.roles:
+            role_title = p.roles[-1].role_title
+
+        lbl_name = QLabel(f"<strong>{identity.username}</strong>")
+        lbl_name.setFont(QFont("Segoe UI", 13))
+        info_layout.addWidget(lbl_name)
+
+        lbl_role = QLabel(f"🌿 {role_title} • 💧 {drops_count} совести")
+        lbl_role.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+        info_layout.addWidget(lbl_role)
+
+        layout.addLayout(info_layout)
+        layout.addStretch()
+
+        # Значок замка или активного игрока
+        if identity.has_pin:
+            lbl_lock = QLabel("🔒")
+            lbl_lock.setToolTip("Защищен 4-значным ПИН-кодом")
+            layout.addWidget(lbl_lock)
+
+        if is_active:
+            lbl_check = QLabel("⭐ Активен")
+            lbl_check.setStyleSheet("color: #d4af37; font-size: 11px; font-weight: bold;")
+            layout.addWidget(lbl_check)
+
+    def mousePressEvent(self, event) -> None:
+        self.clicked.emit(self.identity.pubkey)
+
+
+class PlayerSelectionModal(QDialog):
+    """Модальное окно «Врата Воли: Выбор Игрока»."""
+
+    player_selected = Signal(str) # pubkey
+
+    def __init__(self, node: VolyaNode, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.node = node
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet(GLASS_DIALOG_STYLE)
+        self.resize(520, 560)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setObjectName("glassModalCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 24, 28, 24)
+        card_layout.setSpacing(16)
+
+        # Шапка Врат
+        lbl_ornament = QLabel("❖ ❖ ❖")
+        lbl_ornament.setStyleSheet("color: #d4af37; letter-spacing: 6px; font-size: 11px;")
+        lbl_ornament.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_ornament)
+
+        lbl_title = QLabel("ВРАТА ВОЛИ")
+        lbl_title.setFont(QFont("Georgia", 16, QFont.Bold))
+        lbl_title.setStyleSheet("color: #fefae0; letter-spacing: 2px;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_title)
+
+        lbl_desc = QLabel("Выберите своего игрока для входа в Обитель Великого Баньяна:")
+        lbl_desc.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        lbl_desc.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_desc)
+
+        # Список игроков
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+
+        scroll_widget = QWidget()
+        scroll_widget.setStyleSheet("background: transparent;")
+        self.players_layout = QVBoxLayout(scroll_widget)
+        self.players_layout.setContentsMargins(0, 0, 0, 0)
+        self.players_layout.setSpacing(8)
+
+        scroll.setWidget(scroll_widget)
+        card_layout.addWidget(scroll, 1)
+
+        self._populate_players()
+
+        # Кнопки действий
+        action_layout = QHBoxLayout()
+        action_layout.setSpacing(10)
+
+        btn_new = QPushButton("✨ Новый Игрок")
+        btn_new.setObjectName("primaryBtn")
+        btn_new.clicked.connect(self._open_create_neophyte)
+        action_layout.addWidget(btn_new)
+
+        btn_import = QPushButton("🔑 Войти по ключу")
+        btn_import.clicked.connect(self._open_import_key)
+        action_layout.addWidget(btn_import)
+
+        btn_close = QPushButton("Закрыть")
+        btn_close.clicked.connect(self.reject)
+        action_layout.addWidget(btn_close)
+
+        card_layout.addLayout(action_layout)
+        main_layout.addWidget(card)
+
+    def _populate_players(self) -> None:
+        # Очистка
+        while self.players_layout.count():
+            item = self.players_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        players = self.node.identities_mgr.list_players()
+        active_pk = self.node.identity.pubkey
+
+        for ident in players:
+            card = PlayerCardWidget(
+                node=self.node,
+                identity=ident,
+                is_active=(ident.pubkey == active_pk),
+            )
+            card.clicked.connect(self._on_player_clicked)
+            self.players_layout.addWidget(card)
+
+        self.players_layout.addStretch()
+
+    def _on_player_clicked(self, pubkey: str) -> None:
+        ident = self.node.identities_mgr.get_player(pubkey)
+        if not ident:
+            return
+
+        if ident.has_pin:
+            pin_modal = PinCodeModal(ident, self)
+            if pin_modal.exec() == QDialog.Accepted:
+                self.node.switch_player(pubkey, pin=pin_modal.pin_input.text().strip())
+                self.player_selected.emit(pubkey)
+                self.accept()
+        else:
+            self.node.switch_player(pubkey)
+            self.player_selected.emit(pubkey)
+            self.accept()
+
+    def _open_create_neophyte(self) -> None:
+        dialog = CreatePlayerModal(self.node, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._populate_players()
+            self.player_selected.emit(self.node.identity.pubkey)
+            self.accept()
+
+    def _open_import_key(self) -> None:
+        dialog = ImportKeyModal(self.node, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._populate_players()
+            self.player_selected.emit(self.node.identity.pubkey)
+            self.accept()
+
+
+class CreatePlayerModal(QDialog):
+    """Модальное окно рождения нового игрока (вход Неофитом в квест Посвящение)."""
+
+    def __init__(self, node: VolyaNode, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.node = node
+        self.custom_avatar_data: Optional[bytes] = None
+
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet(GLASS_DIALOG_STYLE)
+        self.resize(480, 520)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setObjectName("glassModalCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 24, 28, 24)
+        card_layout.setSpacing(14)
+
+        lbl_title = QLabel("РОЖДЕНИЕ В ИГРЕ «ВОЛЯ»")
+        lbl_title.setFont(QFont("Georgia", 14, QFont.Bold))
+        lbl_title.setStyleSheet("color: #fefae0;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_title)
+
+        lbl_desc = QLabel(
+            "Каждый новый игрок начинает путь с пустой Чашей (0 капель совести) "
+            "и получает роль Неофита в квесте «Посвящение»."
+        )
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setStyleSheet("color: #94a3b8; font-size: 11.5px;")
+        lbl_desc.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_desc)
+
+        # Превью аватара
+        avatar_row = QHBoxLayout()
+        avatar_row.setSpacing(14)
+        self.lbl_avatar_preview = QLabel()
+        self._update_avatar_preview("Вольный Игрок")
+        avatar_row.addWidget(self.lbl_avatar_preview)
+
+        btn_pick_avatar = QPushButton("📷 Загрузить аватар")
+        btn_pick_avatar.clicked.connect(self._pick_avatar)
+        avatar_row.addWidget(btn_pick_avatar)
+        avatar_row.addStretch()
+        card_layout.addLayout(avatar_row)
+
+        # Поля ввода
+        card_layout.addWidget(QLabel("Вольное имя игрока:"))
+        self.input_name = QLineEdit()
+        self.input_name.setPlaceholderText("Например: Добрыня, Светлана, Радомир")
+        self.input_name.textChanged.connect(self._on_name_changed)
+        card_layout.addWidget(self.input_name)
+
+        card_layout.addWidget(QLabel("О себе / Биография (по желанию):"))
+        self.input_bio = QLineEdit()
+        self.input_bio.setPlaceholderText("Стремлюсь жить по совести и ладу")
+        card_layout.addWidget(self.input_bio)
+
+        card_layout.addWidget(QLabel("ПИН-код для защиты на этом ПК (4 цифры, по желанию):"))
+        self.input_pin = QLineEdit()
+        self.input_pin.setMaxLength(4)
+        self.input_pin.setPlaceholderText("Оставьте пустым, если ПИН не требуется")
+        card_layout.addWidget(self.input_pin)
+
+        self.lbl_error = QLabel("")
+        self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
+        card_layout.addWidget(self.lbl_error)
+
+        # Кнопки
+        btn_layout = QHBoxLayout()
+        btn_cancel = QPushButton("Отмена")
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_cancel)
+
+        btn_create = QPushButton("🌿 Вступить в Посвящение")
+        btn_create.setObjectName("primaryBtn")
+        btn_create.clicked.connect(self._create_player)
+        btn_layout.addWidget(btn_create)
+
+        card_layout.addLayout(btn_layout)
+        main_layout.addWidget(card)
+
+    def _on_name_changed(self, text: str) -> None:
+        if not self.custom_avatar_data:
+            self._update_avatar_preview(text.strip() or "И")
+
+    def _update_avatar_preview(self, name: str) -> None:
+        if self.custom_avatar_data:
+            pix = make_circular_pixmap(self.custom_avatar_data, size=64)
+        else:
+            raw = generate_default_avatar_png(name, name + "genesis_seed_preview", size=128)
+            pix = make_circular_pixmap(raw, size=64)
+        self.lbl_avatar_preview.setPixmap(pix)
+        self.lbl_avatar_preview.setFixedSize(64, 64)
+
+    def _pick_avatar(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите изображение аватара",
+            "",
+            "Изображения (*.png *.jpg *.jpeg *.webp)",
+        )
+        if path:
+            try:
+                self.custom_avatar_data = process_custom_avatar_png(path, size=256)
+                self._update_avatar_preview(self.input_name.text())
+            except Exception as e:
+                self.lbl_error.setText(f"Ошибка загрузки аватара: {e}")
+
+    def _create_player(self) -> None:
+        name = self.input_name.text().strip()
+        if not name:
+            self.lbl_error.setText("Укажите вольное имя игрока.")
+            return
+
+        pin = self.input_pin.text().strip()
+        if pin and (len(pin) != 4 or not pin.isdigit()):
+            self.lbl_error.setText("ПИН-код должен состоять ровно из 4 цифр.")
+            return
+
+        try:
+            player, dev_id = self.node.create_neophyte_player(
+                username=name,
+                bio=self.input_bio.text().strip(),
+                pin=pin if pin else None,
+                custom_avatar_data=self.custom_avatar_data,
+            )
+            self.accept()
+        except Exception as e:
+            self.lbl_error.setText(f"Ошибка создания: {e}")
+
+
+class ImportKeyModal(QDialog):
+    """Модальное окно импорта игрока по приватному ключу."""
+
+    def __init__(self, node: VolyaNode, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.node = node
+
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet(GLASS_DIALOG_STYLE)
+        self.resize(460, 420)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        card = QFrame(self)
+        card.setObjectName("glassModalCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(28, 24, 28, 24)
+        card_layout.setSpacing(14)
+
+        lbl_title = QLabel("ВХОД ПО ПРИВАТНОМУ КЛЮЧУ")
+        lbl_title.setFont(QFont("Georgia", 14, QFont.Bold))
+        lbl_title.setStyleSheet("color: #fefae0;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(lbl_title)
+
+        card_layout.addWidget(QLabel("Приватный ключ (64 шестнадцатеричных символа):"))
+        self.input_key = QLineEdit()
+        self.input_key.setPlaceholderText("Вставьте ваш Ed25519 приватный ключ...")
+        card_layout.addWidget(self.input_key)
+
+        card_layout.addWidget(QLabel("Вольное имя игрока:"))
+        self.input_name = QLineEdit()
+        self.input_name.setPlaceholderText("Ваше имя в игре Воля")
+        card_layout.addWidget(self.input_name)
+
+        card_layout.addWidget(QLabel("ПИН-код для этого устройства (4 цифры, по желанию):"))
+        self.input_pin = QLineEdit()
+        self.input_pin.setMaxLength(4)
+        self.input_pin.setPlaceholderText("4 цифры")
+        card_layout.addWidget(self.input_pin)
+
+        self.lbl_error = QLabel("")
+        self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
+        card_layout.addWidget(self.lbl_error)
+
+        btn_layout = QHBoxLayout()
+        btn_cancel = QPushButton("Отмена")
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_cancel)
+
+        btn_import = QPushButton("🔑 Войти в Обитель")
+        btn_import.setObjectName("primaryBtn")
+        btn_import.clicked.connect(self._import)
+        btn_layout.addWidget(btn_import)
+
+        card_layout.addLayout(btn_layout)
+        main_layout.addWidget(card)
+
+    def _import(self) -> None:
+        key = self.input_key.text().strip()
+        name = self.input_name.text().strip()
+        pin = self.input_pin.text().strip()
+
+        if not key or len(key) != 64:
+            self.lbl_error.setText("Приватный ключ должен содержать ровно 64 символа.")
+            return
+
+        if not name:
+            self.lbl_error.setText("Укажите ваше вольное имя.")
+            return
+
+        if pin and (len(pin) != 4 or not pin.isdigit()):
+            self.lbl_error.setText("ПИН-код должен состоять ровно из 4 цифр.")
+            return
+
+        try:
+            self.node.import_player_key(
+                private_key_hex=key,
+                username=name,
+                pin=pin if pin else None,
+            )
+            self.accept()
+        except Exception as e:
+            self.lbl_error.setText(f"Ошибка импорта: {e}")

@@ -38,10 +38,19 @@ from portal_volya.core.models import (
     Kon,
     Lad,
     Player,
+    PlayerRoleAssignment,
     Quest,
     Role,
     StepName,
     TreeTier,
+)
+from portal_volya.storage.device_identities import (
+    DeviceIdentitiesManager,
+    DevicePlayerIdentity,
+)
+from portal_volya.ui_desktop.avatar_generator import (
+    generate_default_avatar_png,
+    process_custom_avatar_png,
 )
 from portal_volya.eira import EiraAgent, EiraReply
 from portal_volya.storage.dag_store import DagStore
@@ -60,19 +69,34 @@ class VolyaNode:
         self.node_dir = Path(node_dir)
         self.node_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Личность игрока Ed25519 (локальный identity.json)
+        # 1. Менеджер суверенных игроков на устройстве (поддержка нескольких игроков)
+        self.identities_mgr = DeviceIdentitiesManager(node_dir=self.node_dir)
+
         if identity is not None:
             self.identity = identity
         else:
-            self.identity = get_or_create_identity(
-                node_dir=self.node_dir,
-                identity_file="identity.json",
-                default_username=default_username,
-            )
+            active_dev = self.identities_mgr.get_active_player()
+            if active_dev is not None:
+                self.identity = SovereignIdentity(
+                    keypair=active_dev.keypair,
+                    username=active_dev.username,
+                    bio=active_dev.bio,
+                    google_api_key=active_dev.google_api_key,
+                )
+            else:
+                self.identity = get_or_create_identity(
+                    node_dir=self.node_dir,
+                    identity_file="identity.json",
+                    default_username=default_username,
+                )
 
         # 2. Несокрушимая память Вольного Древа на RocksDB (Merkle DAG)
         self.rocksdb_path = self.node_dir / "dag.rocksdb"
         self.dag_store = DagStore(db_path=self.rocksdb_path)
+        self.dag_store.ensure_genesis_tree()
+
+        # Гарантируем наличие аватарки у активного игрока
+        self._ensure_avatar_exists(self.identity.pubkey, self.identity.username)
 
         # 3. Суверенный агент Эйры на локальном узле (нативный Google GenAI SDK)
         self.eira = EiraAgent(
@@ -133,6 +157,241 @@ class VolyaNode:
         )
         self.dag_store.put_node(dag_node)
         return player
+
+    # -----------------------------------------------------------------
+    # Управление суверенными игроками, аватарами и посвящением
+    # -----------------------------------------------------------------
+
+    def _ensure_avatar_exists(self, pubkey: str, username: str) -> None:
+        """Создание процедурной аватарки по умолчанию, если у игрока ещё нет аватарки."""
+        player = self.dag_store.get_player(pubkey)
+        if player and not player.avatar_hash:
+            try:
+                raw_png = generate_default_avatar_png(username, pubkey)
+                h = self.dag_store.put_blob(raw_png)
+                player.avatar_hash = h
+                self.dag_store.save_player(player)
+            except Exception:
+                pass
+
+    def create_neophyte_player(
+        self,
+        username: str,
+        bio: str = "",
+        pin: Optional[str] = None,
+        custom_avatar_data: Optional[bytes | str | Path] = None,
+    ) -> tuple[Player, DevicePlayerIdentity]:
+        """
+        Рождение нового игрока:
+        1. Создается приватный ключ Ed25519.
+        2. Добавляется роль Неофит в квесте Посвящение.
+        3. Устанавливается 0 капель совести в Чаше Души.
+        4. Создается и сохраняется аватар в dag.rocksdb.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        dev_id = self.identities_mgr.register_new_player(
+            username=username,
+            pin=pin,
+            bio=bio,
+        )
+
+        # Генерация или обработка аватара
+        if custom_avatar_data:
+            avatar_bytes = process_custom_avatar_png(custom_avatar_data)
+        else:
+            avatar_bytes = generate_default_avatar_png(dev_id.username, dev_id.pubkey)
+
+        avatar_hash = self.dag_store.put_blob(avatar_bytes)
+
+        # Создание объекта Игрока
+        player = Player(
+            pubkey=dev_id.pubkey,
+            username=dev_id.username,
+            conscience_drops=0,
+            bio=bio,
+            avatar_hash=avatar_hash,
+            roles=[
+                PlayerRoleAssignment(
+                    quest_id="quest-posvyashchenie",
+                    role_title="Неофит",
+                    assigned_at=now,
+                )
+            ],
+            created_at=now,
+        )
+
+        # Сохранение в Merkle DAG
+        node_id = hash_canonical(player.model_dump())
+        sig = dev_id.keypair.sign(node_id.encode("utf-8"))
+        dag_node = DagNode(
+            id=node_id,
+            node_type=DagNodeType.PLAYER,
+            author_pubkey=dev_id.pubkey,
+            parents=[],
+            payload=player.model_dump(),
+            created_at=now,
+            signature=sig,
+        )
+        self.dag_store.put_node(dag_node)
+
+        # Переключаем активную идентичность на нового игрока
+        self.switch_player(dev_id.pubkey, pin=pin)
+
+        # Фиксируем каплю входа в квесте Посвящение
+        try:
+            self.add_drop(
+                quest_id="quest-posvyashchenie",
+                flow_id="flow-quest-posvyashchenie",
+                flow_kind=FlowKind.CONVERSATION,
+                kind=DropKind.TEXT,
+                content=f"Неофит {dev_id.username} вошел во Врата Посвящения с пустой Чашей (0 капель совести).",
+                details={"action": "ENTER_INITIATION", "role": "Неофит"},
+                created_at=now,
+            )
+        except Exception:
+            pass
+
+        return player, dev_id
+
+    def switch_player(self, pubkey: str, pin: Optional[str] = None) -> Player:
+        """Переключение текущего активного игрока на устройстве с проверкой ПИН-кода."""
+        dev_id = self.identities_mgr.get_player(pubkey)
+        if not dev_id:
+            raise ValueError("Игрок с таким публичным ключом не найден на этом устройстве.")
+
+        if dev_id.has_pin:
+            if not pin or not dev_id.verify_pin(pin):
+                raise ValueError("Неверный 4-значный ПИН-код игрока.")
+
+        self.identities_mgr.set_active_player(pubkey)
+        self.identity = SovereignIdentity(
+            keypair=dev_id.keypair,
+            username=dev_id.username,
+            bio=dev_id.bio,
+            google_api_key=dev_id.google_api_key,
+        )
+        self.eira.api_key = self.identity.google_api_key
+
+        # Гарантируем аватар
+        self._ensure_avatar_exists(dev_id.pubkey, dev_id.username)
+
+        p = self.my_player
+        if not p:
+            p = self.register_me(datetime.now(timezone.utc).isoformat(), bio=dev_id.bio)
+        return p
+
+    def import_player_key(
+        self,
+        private_key_hex: str,
+        username: str,
+        pin: Optional[str] = None,
+        bio: str = "",
+    ) -> Player:
+        """Импорт игрока по приватному ключу и переключение на него."""
+        dev_id = self.identities_mgr.import_player_key(
+            private_key_hex=private_key_hex,
+            username=username,
+            pin=pin,
+            bio=bio,
+        )
+        existing = self.dag_store.get_player(dev_id.pubkey)
+        if not existing:
+            self.create_neophyte_player(username=dev_id.username, bio=bio, pin=pin)
+        else:
+            self.switch_player(dev_id.pubkey, pin=pin)
+        return self.my_player
+
+    def complete_initiation(self, player_pubkey: str, determined_drops: int) -> Player:
+        """
+        Завершение квеста Посвящение:
+        1. Определяется количество капель совести в Чаше Души.
+        2. Назначается роль Вольный игрок в квесте Воля.
+        """
+        player = self.dag_store.get_player(player_pubkey)
+        if not player:
+            raise ValueError(f"Игрок {player_pubkey} не найден.")
+
+        now = datetime.now(timezone.utc).isoformat()
+        player.conscience_drops = max(0, determined_drops)
+
+        # Добавляем роль Вольный игрок в квест Воля
+        has_free_player_role = any(
+            r.quest_id == "quest-volya-root" and r.role_title == "Вольный игрок"
+            for r in player.roles
+        )
+        if not has_free_player_role:
+            player.roles.append(
+                PlayerRoleAssignment(
+                    quest_id="quest-volya-root",
+                    role_title="Вольный игрок",
+                    assigned_at=now,
+                )
+            )
+
+        self.dag_store.save_player(player)
+
+        try:
+            self.add_drop(
+                quest_id="quest-posvyashchenie",
+                flow_id="flow-quest-posvyashchenie",
+                flow_kind=FlowKind.CONVERSATION,
+                kind=DropKind.TEXT,
+                content=(
+                    f"Посвящение успешно завершено! Игрок {player.username} обрел "
+                    f"{player.conscience_drops} капель совести в Чаше Души и принят в круг Вольных игроков."
+                ),
+                details={"action": "INITIATION_COMPLETED", "drops": player.conscience_drops},
+                created_at=now,
+            )
+        except Exception:
+            pass
+
+        return player
+
+    def set_player_avatar(
+        self,
+        pubkey: str,
+        avatar_data: bytes | str | Path,
+    ) -> str:
+        """Установка пользовательского аватара игроку с сохранением в dag.rocksdb."""
+        avatar_bytes = process_custom_avatar_png(avatar_data)
+        avatar_hash = self.dag_store.set_player_avatar(pubkey, avatar_bytes)
+        return avatar_hash
+
+    def set_player_pin(self, pubkey: str, new_pin: str, current_pin: Optional[str] = None) -> bool:
+        """Установка или смена 4-значного ПИН-кода игрока."""
+        dev_id = self.identities_mgr.get_player(pubkey)
+        if not dev_id:
+            raise ValueError("Игрок не найден.")
+        if dev_id.has_pin and not dev_id.verify_pin(current_pin or ""):
+            raise ValueError("Текущий ПИН-код неверен.")
+        dev_id.set_pin(new_pin)
+        self.identities_mgr.add_or_update_player(dev_id)
+        return True
+
+    def remove_player_pin(self, pubkey: str, current_pin: Optional[str] = None) -> bool:
+        """Удаление ПИН-кода игрока."""
+        dev_id = self.identities_mgr.get_player(pubkey)
+        if not dev_id:
+            raise ValueError("Игрок не найден.")
+        if dev_id.has_pin and not dev_id.verify_pin(current_pin or ""):
+            raise ValueError("Текущий ПИН-код неверен.")
+        dev_id.remove_pin()
+        self.identities_mgr.add_or_update_player(dev_id)
+        return True
+
+    def get_player_avatar_bytes(self, pubkey: str) -> Optional[bytes]:
+        """Получение байтов аватара игрока из хранилища RocksDB."""
+        avatar_bytes = self.dag_store.get_player_avatar(pubkey)
+        if not avatar_bytes:
+            player = self.dag_store.get_player(pubkey)
+            name = player.username if player else "Вольный Игрок"
+            try:
+                avatar_bytes = generate_default_avatar_png(name, pubkey)
+                self.dag_store.set_player_avatar(pubkey, avatar_bytes)
+            except Exception:
+                pass
+        return avatar_bytes
 
     def create_quest(
         self,

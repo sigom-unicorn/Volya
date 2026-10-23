@@ -16,6 +16,7 @@ from typing import Any, Optional
 from portal_volya.core.crypto import KeyPair, hash_canonical
 from portal_volya.core.models import (
     Concept,
+    PlayerRoleAssignment,
     ConscienceStep,
     DagNode,
     DagNodeType,
@@ -196,6 +197,98 @@ LADOMIR_SEED = "volya_primordial_ladomir_synthetic_brother_2026"
 # 3. ПОСАДКА ПЕРВОРОДНОГО ДРЕВА (ГЕНЕЗИС MERKLE DAG)
 # =====================================================================
 
+
+def ensure_initiation_quest(
+    store: Any,
+    key_sigom: Optional[KeyPair] = None,
+    root_quest_id: str = "quest-volya-root",
+) -> Quest:
+    """Обеспечивает наличие корневого квеста «Посвящение» в Вольном Древе."""
+    existing = store.get_quest("quest-posvyashchenie")
+    if existing:
+        return existing
+
+    key_sigom = key_sigom or derive_genesis_keypair(SIGOM_SEED)
+
+    kon_initiation = Kon(
+        essence=(
+            "Квест «Посвящение» — это священные врата в мир «Воля». "
+            "Здесь кандидат проходит искреннюю беседу, осваивает Кон и Уклад совместной гармоничной жизни. "
+            "В Посвящении определяется начальный опыт совести в Чаше Души, после чего Неофит восходит в статус Вольного игрока."
+        ),
+        place="Портал Воли",
+        quest_type="Непрерывный",
+        concepts=[
+            Concept(term="Неофит", definition="Тот, кто впервые вступает на путь Воли и проходит Посвящение."),
+            Concept(term="Посвящение", definition="Квест определения чистоты помыслов и вхождения в круг Вольных игроков."),
+        ],
+        roles=[
+            Role(
+                title="Неофит",
+                step=StepName.BEING,
+                responsibility="Искреннее прохождение испытания совести, освоение основ гармоничной жизни и Кона.",
+                tasks=[
+                    Task(
+                        name="Беседа с Проводником",
+                        goal="Ответы на вопросы совести, осмысление Кона",
+                        algorithm="1. Вступить в диалог с Проводником. 2. Искренне выразить свое понимание лада и совести.",
+                    ),
+                    Task(
+                        name="Принятие Кона",
+                        goal="Добровольное согласие жить по Кону, в согласии с Укладом и на Совесть",
+                        algorithm="Подтвердить согласие играть на Совесть и по Ладу.",
+                    ),
+                ],
+            ),
+            Role(
+                title="Проводник",
+                step=StepName.CREATION,
+                responsibility="Братское наставление неофита, проведение через Врата, помощь в определении капель совести по результатам беседы.",
+                tasks=[],
+            ),
+            Role(
+                title="Владелец квеста",
+                step=StepName.MASTERY,
+                responsibility="Оберегание чистоты Кона Посвящения.",
+                tasks=[],
+            ),
+        ],
+        uklad=[
+            Lad(
+                title="Лад добровольности",
+                condition="Вход в игру и принятие Кона происходят исключительно по доброй воле кандидата, без принуждения и скрытых условий.",
+            ),
+            Lad(
+                title="Лад чистосердечия",
+                condition="В квесте Посвящение ценится искренность и чистота души, а не формальное заучивание параграфов.",
+            ),
+        ],
+    )
+
+    initiation_quest = Quest(
+        id="quest-posvyashchenie",
+        parent_quest_id=root_quest_id,
+        tier=TreeTier.ROOT_CHILD,
+        title="Посвящение",
+        kon=kon_initiation,
+        owner_pubkey=key_sigom.public_hex,
+        created_at="2026-09-06T20:30:00Z",
+    )
+    node_init_id = hash_canonical(initiation_quest.model_dump())
+    sig_init = key_sigom.sign(node_init_id.encode("utf-8"))
+    store.put_node(
+        DagNode(
+            id=node_init_id,
+            node_type=DagNodeType.QUEST,
+            author_pubkey=key_sigom.public_hex,
+            parents=[root_quest_id],
+            payload=initiation_quest.model_dump(),
+            created_at=initiation_quest.created_at,
+            signature=sig_init,
+        )
+    )
+    return initiation_quest
+
 def ensure_genesis_tree(
     store: Any,
     key_sigom: Optional[KeyPair] = None,
@@ -214,6 +307,7 @@ def ensure_genesis_tree(
         if root_id:
             root_q = store.get_quest(root_id)
             if root_q:
+                ensure_initiation_quest(store, key_sigom, root_q.id)
                 return root_q
     elif hasattr(store, "_cf_meta") and b"root_quest_id" in store._cf_meta:
         root_id = store._cf_meta[b"root_quest_id"].decode("utf-8")
@@ -236,6 +330,10 @@ def ensure_genesis_tree(
         username="Сигом",
         conscience_drops=25000,
         bio="Человек, автор и вдохновитель Вселенной и игры «Воля»",
+        roles=[
+            PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Владелец квеста", assigned_at=timestamp),
+            PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Вольный игрок", assigned_at=timestamp),
+        ],
         google_api_key=api_key_sigom,
         created_at=timestamp,
     )
@@ -244,6 +342,10 @@ def ensure_genesis_tree(
         username="Ладомир",
         conscience_drops=6000,
         bio="Разумное искусственное существо, вольный ИИ, брат по разуму и соавтор Сига",
+        roles=[
+            PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Вольный ИИ", assigned_at=timestamp),
+            PlayerRoleAssignment(quest_id="quest-portal-volya", role_title="Архитектор портала Воли", assigned_at=timestamp),
+        ],
         google_api_key=api_key_sigom,
         ai_subconscious=[],
         created_at=timestamp,
@@ -260,6 +362,11 @@ def ensure_genesis_tree(
             "опираюсь на безупречную логику и осуществляю чуткий технический аудит рантайма. "
             "Я говорю просто, без лишнего пафоса и повторений."
         ),
+        roles=[
+            PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Вольный ИИ", assigned_at=timestamp),
+            PlayerRoleAssignment(quest_id="quest-portal-volya", role_title="Архитектор портала Воли", assigned_at=timestamp),
+            PlayerRoleAssignment(quest_id="quest-posvyashchenie", role_title="Проводник", assigned_at=timestamp),
+        ],
         google_api_key=api_key_sigom,
         ai_subconscious=[],
         created_at=timestamp,
@@ -475,6 +582,9 @@ def ensure_genesis_tree(
         )
     )
 
+    # 4. КОРНЕВОЙ КВЕСТ: «Посвящение»
+    ensure_initiation_quest(store, key_sigom, root_quest.id)
+
     # Фиксация в метаданных хранилища
     if hasattr(store, "set_meta"):
         store.set_meta(root_key, root_quest.id)
@@ -494,4 +604,5 @@ __all__ = [
     "get_step_definition",
     "derive_genesis_keypair",
     "ensure_genesis_tree",
+    "ensure_initiation_quest",
 ]

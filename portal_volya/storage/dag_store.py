@@ -31,6 +31,7 @@ from portal_volya.core.models import (
     Kon,
     Lad,
     Player,
+    PlayerRoleAssignment,
     Quest,
     Role,
     StepName,
@@ -44,6 +45,7 @@ CF_PLAYERS = "players"          # pubkey (64 hex chars) -> binary Player
 CF_TREE_LINKS = "tree_links"    # parent_id -> list of child_ids
 CF_FLOW_LINKS = "flow_links"    # flow_id -> list of drop_ids
 CF_SUMMARIES = "flow_summaries" # flow_id -> list of FlowSummary dicts
+CF_BLOBS = "blobs"              # blob_hash (Blake3) -> binary data (avatars, images)
 CF_META = "dag_meta"            # служебные метаданные (root_id, stats)
 
 
@@ -73,6 +75,7 @@ class DagStore:
             CF_TREE_LINKS: Options(),
             CF_FLOW_LINKS: Options(),
             CF_SUMMARIES: Options(),
+            CF_BLOBS: Options(),
             CF_META: Options(),
         }
 
@@ -85,6 +88,7 @@ class DagStore:
         self._cf_tree = self.db.get_column_family(CF_TREE_LINKS)
         self._cf_flows = self.db.get_column_family(CF_FLOW_LINKS)
         self._cf_summaries = self.db.get_column_family(CF_SUMMARIES)
+        self._cf_blobs = self.db.get_column_family(CF_BLOBS)
         self._cf_meta = self.db.get_column_family(CF_META)
 
         self._h_nodes = self.db.get_column_family_handle(CF_NODES)
@@ -94,6 +98,7 @@ class DagStore:
         self._h_tree = self.db.get_column_family_handle(CF_TREE_LINKS)
         self._h_flows = self.db.get_column_family_handle(CF_FLOW_LINKS)
         self._h_summaries = self.db.get_column_family_handle(CF_SUMMARIES)
+        self._h_blobs = self.db.get_column_family_handle(CF_BLOBS)
         self._h_meta = self.db.get_column_family_handle(CF_META)
 
     def close(self) -> None:
@@ -112,6 +117,7 @@ class DagStore:
                 self._cf_tree = None
                 self._cf_flows = None
                 self._cf_summaries = None
+                self._cf_blobs = None
                 self._cf_meta = None
                 self._h_nodes = None
                 self._h_quests = None
@@ -120,6 +126,7 @@ class DagStore:
                 self._h_tree = None
                 self._h_flows = None
                 self._h_summaries = None
+                self._h_blobs = None
                 self._h_meta = None
                 self.db = None
                 gc.collect()
@@ -137,62 +144,75 @@ class DagStore:
     def put_node(self, node: DagNode) -> None:
         """
         Атомарное сохранение узла в Merkle DAG:
-        - Индексация узла в общем каталоге
-        - Раскладка по специализированным индексам (квест, капля, игрок)
+        - Индексация узла в общем каталоге dag_nodes
+        - Индексация в предметных колоночных семействах (quests, flow_drops, players)
+        - Обновление графа связей (tree_links, flow_links)
         """
-        wb = WriteBatch()
-        node_id_b = _h_bytes(node.id)
-        raw_node = ormsgpack.packb(node.model_dump())
-        wb.put(node_id_b, raw_node, self._h_nodes)
+        batch = WriteBatch()
+        node_key = node.id.encode("utf-8")
+        node_bytes = ormsgpack.packb(node.model_dump())
 
-        # 1. Если узел - появление Квеста
+        # 1. Запись узла в общий DAG
+        batch.put(node_key, node_bytes, self._h_nodes)
+
+        # 2. Предметная индексация по типу узла
         if node.node_type == DagNodeType.QUEST:
             quest = Quest(**node.payload)
-            q_id_b = _h_bytes(quest.id)
-            wb.put(q_id_b, ormsgpack.packb(quest.model_dump()), self._h_quests)
+            q_key = quest.id.encode("utf-8")
+            batch.put(q_key, ormsgpack.packb(quest.model_dump()), self._h_quests)
 
-            # Привязка к родителю в Древе
-            parent_key = _h_bytes(quest.parent_quest_id) if quest.parent_quest_id else b"ROOT"
-            existing_children_raw = self._cf_tree.get(parent_key)
-            existing_children = ormsgpack.unpackb(existing_children_raw) if existing_children_raw else []
-            if quest.id not in existing_children:
-                existing_children.append(quest.id)
-                wb.put(parent_key, ormsgpack.packb(existing_children), self._h_tree)
+            # Обновление связей Древа
+            if quest.parent_quest_id:
+                p_key = quest.parent_quest_id.encode("utf-8")
+                raw_children = self._cf_tree.get(p_key)
+                children = ormsgpack.unpackb(raw_children) if raw_children else []
+                if quest.id not in children:
+                    children.append(quest.id)
+                    batch.put(p_key, ormsgpack.packb(children), self._h_tree)
 
-        # 2. Если узел - Капля в потоке (слово, аудио, видео, ресурс, инструмент, артефакт)
         elif node.node_type == DagNodeType.DROP:
             drop = FlowDrop(**node.payload)
-            d_id_b = _h_bytes(drop.id)
-            wb.put(d_id_b, ormsgpack.packb(drop.model_dump()), self._h_drops)
+            d_key = drop.id.encode("utf-8")
+            batch.put(d_key, ormsgpack.packb(drop.model_dump()), self._h_drops)
 
-            # Привязка капли к нити потока
-            flow_key = drop.flow_id.encode("utf-8")
-            existing_drops_raw = self._cf_flows.get(flow_key)
-            existing_drops = ormsgpack.unpackb(existing_drops_raw) if existing_drops_raw else []
-            if drop.id not in existing_drops:
-                existing_drops.append(drop.id)
-                wb.put(flow_key, ormsgpack.packb(existing_drops), self._h_flows)
+            # Обновление стрелы времени потока
+            f_key = drop.flow_id.encode("utf-8")
+            raw_drops = self._cf_flows.get(f_key)
+            drops_list = ormsgpack.unpackb(raw_drops) if raw_drops else []
+            if drop.id not in drops_list:
+                drops_list.append(drop.id)
+                batch.put(f_key, ormsgpack.packb(drops_list), self._h_flows)
 
-        # 3. Если узел - регистрация игрока
         elif node.node_type == DagNodeType.PLAYER:
             player = Player(**node.payload)
             p_key = player.pubkey.encode("utf-8")
-            wb.put(p_key, ormsgpack.packb(player.model_dump()), self._h_players)
+            batch.put(p_key, ormsgpack.packb(player.model_dump()), self._h_players)
 
-        self.db.write(wb)
+        elif node.node_type == DagNodeType.VECHE_RESULT:
+            # Согласованное обновление Кона
+            quest_id = node.payload.get("quest_id")
+            if quest_id:
+                quest = self.get_quest(quest_id)
+                if quest:
+                    quest.kon = Kon(**node.payload.get("new_kon"))
+                    q_key = quest.id.encode("utf-8")
+                    batch.put(q_key, ormsgpack.packb(quest.model_dump()), self._h_quests)
+
+        self.db.write(batch)
 
     def get_node(self, node_id: str) -> Optional[DagNode]:
-        raw = self._cf_nodes.get(_h_bytes(node_id))
+        """Получение узла DAG по его Blake3 хэшу."""
+        raw = self._cf_nodes.get(node_id.encode("utf-8"))
         if not raw:
             return None
         return DagNode(**ormsgpack.unpackb(raw))
 
     # -----------------------------------------------------------------
-    # Выборки по иерархии Древа
+    # Квесты Вольного Древа
     # -----------------------------------------------------------------
 
     def get_quest(self, quest_id: str) -> Optional[Quest]:
-        raw = self._cf_quests.get(_h_bytes(quest_id))
+        raw = self._cf_quests.get(quest_id.encode("utf-8"))
         if not raw:
             return None
         return Quest(**ormsgpack.unpackb(raw))
@@ -203,30 +223,34 @@ class DagStore:
             quests.append(Quest(**ormsgpack.unpackb(raw)))
         return quests
 
-    def get_child_quests(self, parent_quest_id: Optional[str]) -> list[Quest]:
-        parent_key = _h_bytes(parent_quest_id) if parent_quest_id else b"ROOT"
-        raw = self._cf_tree.get(parent_key)
+    def get_child_quests(self, parent_quest_id: str) -> list[Quest]:
+        raw = self._cf_tree.get(parent_quest_id.encode("utf-8"))
         if not raw:
             return []
         child_ids = ormsgpack.unpackb(raw)
-        res = []
+        children = []
         for cid in child_ids:
             q = self.get_quest(cid)
             if q:
-                res.append(q)
-        return res
+                children.append(q)
+        return children
+
+    def count_nodes(self) -> int:
+        """Общее число узлов в Merkle DAG."""
+        return len(self._cf_nodes)
 
     # -----------------------------------------------------------------
-    # Выборки по Потокам и Каплям (Слово, Аудио, Ресурс, Инструмент, Артефакт)
+    # Потоки и Капли
     # -----------------------------------------------------------------
 
     def get_drop(self, drop_id: str) -> Optional[FlowDrop]:
-        raw = self._cf_drops.get(_h_bytes(drop_id))
+        raw = self._cf_drops.get(drop_id.encode("utf-8"))
         if not raw:
             return None
         return FlowDrop(**ormsgpack.unpackb(raw))
 
     def get_flow_drops(self, flow_id: str) -> list[FlowDrop]:
+        """Получение всех капель потока в хронологическом порядке."""
         flow_key = flow_id.encode("utf-8")
         raw = self._cf_flows.get(flow_key)
         if not raw:
@@ -266,6 +290,36 @@ class DagStore:
         return summaries[-1] if summaries else None
 
     # -----------------------------------------------------------------
+    # Хранилище блобов (Content-Addressed Storage: аватарки, медиа)
+    # -----------------------------------------------------------------
+
+    def put_blob(self, data: bytes) -> str:
+        """Сохранение бинарного блоба по его Blake3 хэшу."""
+        h = hash_bytes(data)
+        self._cf_blobs[h.encode("utf-8")] = data
+        return h
+
+    def get_blob(self, blob_hash: str) -> Optional[bytes]:
+        """Получение бинарного блоба по его Blake3 хэшу."""
+        return self._cf_blobs.get(blob_hash.encode("utf-8"))
+
+    def set_player_avatar(self, pubkey: str, avatar_bytes: bytes) -> str:
+        """Сохранение и привязка аватарки игрока в RocksDB."""
+        avatar_hash = self.put_blob(avatar_bytes)
+        player = self.get_player(pubkey)
+        if player:
+            player.avatar_hash = avatar_hash
+            self.save_player(player)
+        return avatar_hash
+
+    def get_player_avatar(self, pubkey: str) -> Optional[bytes]:
+        """Получение байтов аватарки игрока из RocksDB."""
+        player = self.get_player(pubkey)
+        if player and player.avatar_hash:
+            return self.get_blob(player.avatar_hash)
+        return None
+
+    # -----------------------------------------------------------------
     # Игроки
     # -----------------------------------------------------------------
 
@@ -295,6 +349,28 @@ class DagStore:
             if p.username.strip().lower() == target.lower():
                 return p
         return None
+
+    def assign_player_role(
+        self,
+        pubkey: str,
+        quest_id: str,
+        role_title: str,
+        assigned_at: Optional[str] = None,
+    ) -> Optional[Player]:
+        """Назначение роли игроку в квесте с сохранением в Merkle DAG."""
+        player = self.get_player(pubkey)
+        if not player:
+            return None
+        now = assigned_at or datetime.now(timezone.utc).isoformat()
+        # Проверяем, назначена ли уже роль
+        for r in player.roles:
+            if r.quest_id == quest_id and r.role_title == role_title:
+                return player
+        player.roles.append(
+            PlayerRoleAssignment(quest_id=quest_id, role_title=role_title, assigned_at=now)
+        )
+        self.save_player(player)
+        return player
 
     def add_ai_memory(
         self,
@@ -414,4 +490,3 @@ class DagStore:
         """Делегирование канонической посадки Древа истоку в core.genesis."""
         from portal_volya.core.genesis import ensure_genesis_tree
         return ensure_genesis_tree(self, key_sigom, key_ladomir, key_eira)
-
