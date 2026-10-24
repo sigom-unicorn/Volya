@@ -182,9 +182,19 @@ class PlayerProfileModal(QDialog):
         self.lbl_bio.setWordWrap(True)
         name_info_layout.addWidget(self.lbl_bio)
 
-        btn_avatar = QPushButton("📷 Загрузить свой аватар")
+        avatar_btns_layout = QHBoxLayout()
+        avatar_btns_layout.setSpacing(8)
+
+        btn_avatar = QPushButton("📷 Загрузить")
         btn_avatar.clicked.connect(self._change_avatar)
-        name_info_layout.addWidget(btn_avatar)
+        avatar_btns_layout.addWidget(btn_avatar)
+
+        btn_gen_pixel = QPushButton("🎲 Пиксельный тотем")
+        btn_gen_pixel.setToolTip("Сгенерировать священный пиксельный тотем")
+        btn_gen_pixel.clicked.connect(self._generate_pixel_avatar)
+        avatar_btns_layout.addWidget(btn_gen_pixel)
+
+        name_info_layout.addLayout(avatar_btns_layout)
 
         header_layout.addLayout(name_info_layout)
         header_layout.addStretch()
@@ -374,6 +384,19 @@ class PlayerProfileModal(QDialog):
             except Exception as e:
                 QMessageBox.warning(self, "Ошибка загрузки", f"Не удалось обновить аватар: {e}")
 
+    def _generate_pixel_avatar(self) -> None:
+        try:
+            import time
+            pk = self.node.identity.pubkey
+            name = self.node.identity.username
+            seed = f"{pk}:{time.time()}"
+            png_bytes = generate_default_avatar_png(name, seed)
+            self.node.set_player_avatar(pk, png_bytes)
+            self._refresh_content()
+            self.profile_updated.emit()
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка генерации", f"Не удалось сгенерировать тотем: {e}")
+
     def _open_change_pin(self) -> None:
         dev_id = self.node.identities_mgr.get_player(self.node.identity.pubkey)
         has_pin = dev_id.has_pin if dev_id else False
@@ -386,7 +409,7 @@ class PlayerProfileModal(QDialog):
         if not dev_id or not dev_id.has_pin:
             return
 
-        pin_modal = PinCodeModal(dev_id, self)
+        pin_modal = PinCodeModal(dev_id, node=self.node, allow_switch_player=False, parent=self)
         if pin_modal.exec() == QDialog.Accepted:
             pin = pin_modal.pin_input.text().strip()
             try:

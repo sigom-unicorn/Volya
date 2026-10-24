@@ -167,4 +167,141 @@ def test_glass_player_pill_and_profile_modal(temp_node_dir, qapp):
         assert window.player_pill is not None
         assert window.player_pill.lbl_name.text() == "Яромир"
         window.close()
+        qapp.processEvents()
+
+
+def test_startup_pin_auth_flow(temp_node_dir, qapp):
+    """Проверка блокировки окна при запуске, если у активного игрока установлен ПИН-код."""
+    from portal_volya.ui_desktop.main_window import VolyaLivingWindow
+    from portal_volya.ui_desktop.sacred_auth import SacredPinLockWidget
+
+    with VolyaNode(node_dir=temp_node_dir) as node:
+        pk = node.identity.pubkey
+        # Настраиваем ПИН-код активному игроку
+        node.set_player_pin(pk, "7788")
+
+        # Создаем окно — оно ДОЛЖНО быть не авторизовано при старте
+        window = VolyaLivingWindow(node=node)
+        window.show()
+        qapp.processEvents()
+
+        assert window.is_authenticated is False
+        assert window.player_pill.isVisible() is False
+        assert window.sacred_lock.isVisible() is True
+
+        # Проверяем имя сверху аватарки
+        assert window.sacred_lock.lbl_name.text() == "Сигом"
+
+        # Неверный ПИН
+        window.sacred_lock.pin_input.setText("1234")
+        assert "Осталось попыток: 2" in window.sacred_lock.lbl_status.text()
+        assert window.is_authenticated is False
+
+        # Верный ПИН — эфирный замок открывается
+        window.sacred_lock.pin_input.setText("7788")
+        assert window.is_authenticated is True
+        assert window.sacred_lock.isVisible() is False
+        assert window.player_pill.isVisible() is True
+
+        window.close()
+        qapp.processEvents()
+
+
+def test_sacred_lock_widget_interactions(temp_node_dir, qapp):
+    """Проверка интерактива подсвечивающейся дуги и светящейся нити."""
+    from portal_volya.ui_desktop.sacred_auth import SacredPinLockWidget
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QPointF, QEvent, Qt
+
+    with VolyaNode(node_dir=temp_node_dir) as node:
+        pk = node.identity.pubkey
+        node.set_player_pin(pk, "9999")
+        dev_id = node.identities_mgr.get_player(pk)
+
+        widget = SacredPinLockWidget(node, dev_id)
+        widget.show()
+        qapp.processEvents()
+        assert widget.btn_switch.isVisible() is False
+        assert widget._arc_hovered is False
+
+        # Симулируем наведение мыши на дугу под аватаркой
+        # cx = 160, cy = 105, дуга на cy + arc_radius = 105 + 58 = 163
+        hover_ev = QMouseEvent(
+            QEvent.MouseMove,
+            QPointF(160, 160),
+            QPointF(160, 160),
+            Qt.NoButton,
+            Qt.NoButton,
+            Qt.NoModifier,
+        )
+        widget.mouseMoveEvent(hover_ev)
+        assert widget._arc_hovered is True
+        assert widget.btn_switch.isVisible() is True
+
+        # Симулируем уход курсора
+        leave_ev = QMouseEvent(
+            QEvent.MouseMove,
+            QPointF(10, 10),
+            QPointF(10, 10),
+            Qt.NoButton,
+            Qt.NoButton,
+            Qt.NoModifier,
+        )
+        widget.mouseMoveEvent(leave_ev)
+        assert widget._arc_hovered is False
+        assert widget.btn_switch.isVisible() is False
+
+        widget.close()
+        qapp.processEvents()
+
+
+def test_pin_bruteforce_protection_and_cooldown(temp_node_dir, qapp):
+    """Проверка защиты от брутфорса: 3 неверных ввода вызывают 30 секунд остывания."""
+    from portal_volya.ui_desktop.auth_dialogs import PinCodeModal
+
+    with VolyaNode(node_dir=temp_node_dir) as node:
+        pk = node.identity.pubkey
+        node.set_player_pin(pk, "5555")
+        dev_id = node.identities_mgr.get_player(pk)
+
+        modal = PinCodeModal(dev_id, node=node)
+
+        # 1-я неверная попытка (setText автоматически вызывает _verify при 4 цифрах)
+        modal.pin_input.setText("0000")
+        assert "Осталось попыток: 2" in modal.lbl_error.text()
+        assert modal.pin_input.isEnabled() is True
+
+        # 2-я неверная попытка
+        modal.pin_input.setText("1111")
+        assert "Осталось попыток: 1" in modal.lbl_error.text()
+        assert modal.pin_input.isEnabled() is True
+
+        # 3-я неверная попытка -> активируется период остывания 30 сек
+        modal.pin_input.setText("2222")
+        assert "Подождите" in modal.lbl_error.text()
+        assert modal.pin_input.isEnabled() is False
+        assert modal.btn_submit.isEnabled() is False
+        assert modal.cooldown_remaining > 0
+
+        # Проверяем сохранение остывания на узле
+        rem = node.get_pin_lockout_seconds(pk)
+        assert rem > 0 and rem <= 30
+
+        # Симулируем тики таймера остывания
+        modal.cooldown_remaining = 1
+        modal._on_cooldown_tick()
+        assert modal.cooldown_remaining == 0
+        assert modal.pin_input.isEnabled() is True
+        assert modal.btn_submit.isEnabled() is True
+
+        # После остывания дается еще 3 попытки, вводим верный ПИН
+        modal.pin_input.setText("5555")
+        assert dev_id.failed_pin_attempts == 0
+        assert node.get_pin_lockout_seconds(pk) == 0
+
+        modal.close()
+        qapp.processEvents()
+
+
+
 

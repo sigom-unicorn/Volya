@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QByteArray, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QByteArray, QRectF, QSize, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -126,13 +126,22 @@ class PinCodeModal(QDialog):
 
     authenticated = Signal()
 
-    def __init__(self, identity: DevicePlayerIdentity, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        identity: DevicePlayerIdentity,
+        node: Optional[VolyaNode] = None,
+        allow_switch_player: bool = False,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.identity = identity
+        self.node = node
+        self.allow_switch_player = allow_switch_player
+
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setStyleSheet(GLASS_DIALOG_STYLE)
-        self.resize(360, 320)
+        self.resize(380, 360)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -141,13 +150,23 @@ class PinCodeModal(QDialog):
         card.setObjectName("glassModalCard")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(24, 24, 24, 24)
-        card_layout.setSpacing(14)
+        card_layout.setSpacing(12)
 
         # Заголовок
         lbl_lock = QLabel("🔒 Вход защищён ПИН-кодом")
         lbl_lock.setFont(QFont("Segoe UI", 13, QFont.Bold))
         lbl_lock.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(lbl_lock)
+
+        # Аватар игрока (если доступен узел)
+        if self.node:
+            avatar_bytes = self.node.get_player_avatar_bytes(self.identity.pubkey)
+            if not avatar_bytes:
+                avatar_bytes = generate_default_avatar_png(self.identity.username, self.identity.pubkey)
+            lbl_avatar = QLabel()
+            lbl_avatar.setPixmap(make_circular_pixmap(avatar_bytes, size=52))
+            lbl_avatar.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(lbl_avatar)
 
         lbl_sub = QLabel(f"Игрок: <strong>{self.identity.username}</strong>")
         lbl_sub.setAlignment(Qt.AlignCenter)
@@ -170,32 +189,104 @@ class PinCodeModal(QDialog):
 
         # Кнопки
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+
+        if self.allow_switch_player:
+            btn_switch = QPushButton("👤 Сменить")
+            btn_switch.setToolTip("Войти под другим игроком")
+            btn_switch.clicked.connect(lambda: self.done(2))
+            btn_layout.addWidget(btn_switch)
+
         btn_cancel = QPushButton("Отмена")
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(btn_cancel)
 
-        btn_submit = QPushButton("Войти")
-        btn_submit.setObjectName("primaryBtn")
-        btn_submit.clicked.connect(self._verify)
-        btn_layout.addWidget(btn_submit)
+        self.btn_submit = QPushButton("Войти")
+        self.btn_submit.setObjectName("primaryBtn")
+        self.btn_submit.clicked.connect(self._verify)
+        btn_layout.addWidget(self.btn_submit)
 
         card_layout.addLayout(btn_layout)
         main_layout.addWidget(card)
 
+        # Настройка таймера периода остывания (anti-bruteforce)
+        self.cooldown_timer = QTimer(self)
+        self.cooldown_timer.timeout.connect(self._on_cooldown_tick)
+        self.cooldown_remaining = 0
+
+        # Проверка текущего остывания при открытии окна
+        if self.node:
+            init_lockout = self.node.get_pin_lockout_seconds(self.identity.pubkey)
+        else:
+            init_lockout = self.identity.get_lockout_remaining_seconds()
+
+        if init_lockout > 0:
+            self._start_cooldown(init_lockout)
+        else:
+            self.pin_input.setFocus()
+
+    def _start_cooldown(self, seconds: int) -> None:
+        """Блокировка ввода на период остывания."""
+        self.cooldown_remaining = seconds
+        self.pin_input.setEnabled(False)
+        self.btn_submit.setEnabled(False)
+        self.lbl_error.setText(f"⏳ Слишком много неверных попыток.\nПодождите {self.cooldown_remaining} сек.")
+        self.cooldown_timer.start(1000)
+
+    def _on_cooldown_tick(self) -> None:
+        """Ежесекундное обновление таймера остывания."""
+        self.cooldown_remaining -= 1
+        if self.cooldown_remaining <= 0:
+            self.cooldown_timer.stop()
+            self.pin_input.setEnabled(True)
+            self.btn_submit.setEnabled(True)
+            self.pin_input.clear()
+            self.pin_input.setFocus()
+            self.lbl_error.setText("Вы можете попробовать снова (3 попытки)")
+            self.lbl_error.setStyleSheet("color: #10b981; font-size: 12px;")
+        else:
+            self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
+            self.lbl_error.setText(f"⏳ Слишком много неверных попыток.\nПодождите {self.cooldown_remaining} сек.")
+
     def _on_pin_changed(self, text: str) -> None:
+        if self.cooldown_remaining > 0:
+            return
         self.lbl_error.setText("")
+        self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
         if len(text.strip()) == 4:
             self._verify()
 
     def _verify(self) -> None:
+        if self.cooldown_remaining > 0:
+            return
+
         pin = self.pin_input.text().strip()
         if self.identity.verify_pin(pin):
+            if self.node:
+                self.node.reset_failed_pin_attempts(self.identity.pubkey)
+            else:
+                self.identity.reset_failed_pin_attempts()
             self.authenticated.emit()
             self.accept()
         else:
-            self.lbl_error.setText("Неверный ПИН-код. Попробуйте снова.")
-            self.pin_input.selectAll()
-            self.pin_input.setFocus()
+            if self.node:
+                failed_count, cooldown = self.node.record_failed_pin_attempt(self.identity.pubkey)
+            else:
+                failed_count, cooldown = self.identity.record_failed_pin_attempt()
+
+            if cooldown > 0:
+                self._start_cooldown(cooldown)
+            else:
+                attempts_left = 3 - failed_count
+                self.lbl_error.setStyleSheet("color: #ef4444; font-size: 12px;")
+                self.lbl_error.setText(f"Неверный ПИН-код. Осталось попыток: {attempts_left}")
+                self.pin_input.selectAll()
+                self.pin_input.setFocus()
+
+    def closeEvent(self, event) -> None:
+        if hasattr(self, "cooldown_timer") and self.cooldown_timer.isActive():
+            self.cooldown_timer.stop()
+        super().closeEvent(event)
 
 
 class PlayerCardWidget(QFrame):
@@ -385,7 +476,7 @@ class PlayerSelectionModal(QDialog):
             return
 
         if ident.has_pin:
-            pin_modal = PinCodeModal(ident, self)
+            pin_modal = PinCodeModal(ident, node=self.node, allow_switch_player=False, parent=self)
             if pin_modal.exec() == QDialog.Accepted:
                 self.node.switch_player(pubkey, pin=pin_modal.pin_input.text().strip())
                 self.player_selected.emit(pubkey)

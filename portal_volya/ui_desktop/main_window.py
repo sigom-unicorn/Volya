@@ -22,6 +22,7 @@ from PySide6.QtGui import (
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -33,7 +34,9 @@ from PySide6.QtWidgets import (
 )
 
 from portal_volya.node import VolyaNode
+from portal_volya.ui_desktop.auth_dialogs import PinCodeModal, PlayerSelectionModal
 from portal_volya.ui_desktop.profile_pill import GlassPlayerPill
+from portal_volya.ui_desktop.sacred_auth import SacredPinLockWidget
 from portal_volya.ui_desktop.world.living_canvas import LivingWorldCanvas
 
 # Настройка формата OpenGL 3.3 Core Profile для шейдера живой воды
@@ -270,13 +273,19 @@ class VolyaLivingWindow(QMainWindow):
         self._own_node = node is None
         self.node = node if node is not None else VolyaNode()
 
-        # Центральный живой холст
+        # Статус авторизации текущего активного игрока
+        active_dev = self.node.identities_mgr.get_active_player()
+        self.is_authenticated = not (active_dev and active_dev.has_pin)
+
+        # Центральный живой холст (река, небо, Баньян)
         self.world_widget = LivingWorldWidget(self)
         self.setCentralWidget(self.world_widget)
 
         # Парящий профиль игрока в верхнем левом углу (Аватар, Капли, Роль, Смена)
         self.player_pill = GlassPlayerPill(self.node, self)
         self.player_pill.adjustSize()
+        if not self.is_authenticated:
+            self.player_pill.setVisible(False)
 
         # Парящая панель управления внизу (Время суток, Светила, Цикл)
         self.control_pill = GlassControlPill(self.world_widget, self)
@@ -292,6 +301,37 @@ class VolyaLivingWindow(QMainWindow):
         """)
         self.lbl_hint.adjustSize()
 
+        # Эфирный замок авторизации (прямо поверх полотна, без рамок и панелей)
+        self.sacred_lock = SacredPinLockWidget(self.node, active_dev, self)
+        self.sacred_lock.authenticated.connect(self._on_sacred_authenticated)
+        self.sacred_lock.switch_player_requested.connect(self._on_sacred_switch_player)
+        self.sacred_lock.setVisible(not self.is_authenticated)
+
+    def _on_sacred_authenticated(self) -> None:
+        """Успешный ввод ПИН-кода в эфирном замке."""
+        self.is_authenticated = True
+        self.sacred_lock.setVisible(False)
+        self.player_pill.refresh()
+        self.player_pill.setVisible(True)
+
+    def _on_sacred_switch_player(self) -> None:
+        """Запрос смены игрока из эфирного замка."""
+        sel_modal = PlayerSelectionModal(self.node, parent=self)
+        if sel_modal.exec() == QDialog.Accepted:
+            new_dev = self.node.identities_mgr.get_active_player()
+            if new_dev:
+                if new_dev.has_pin:
+                    self.is_authenticated = False
+                    self.sacred_lock.set_identity(new_dev)
+                    self.sacred_lock.setVisible(True)
+                    self.sacred_lock.pin_input.setFocus()
+                    self.player_pill.setVisible(False)
+                else:
+                    self.is_authenticated = True
+                    self.sacred_lock.setVisible(False)
+                    self.player_pill.refresh()
+                    self.player_pill.setVisible(True)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         # Профиль игрока в верхнем левом углу
@@ -304,10 +344,22 @@ class VolyaLivingWindow(QMainWindow):
         y = self.height() - pill_h - 24
         self.control_pill.move(x, y)
 
+        # Центрируем эфирный замок поверх живого мира
+        if hasattr(self, "sacred_lock") and self.sacred_lock:
+            sl_w = self.sacred_lock.width()
+            sl_h = self.sacred_lock.height()
+            sl_x = (self.width() - sl_w) // 2
+            sl_y = (self.height() - sl_h) // 2 - 25
+            self.sacred_lock.move(sl_x, sl_y)
+
         # Подсказка в левом нижнем углу
         self.lbl_hint.move(20, self.height() - 28)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not self.is_authenticated and event.key() == Qt.Key_Escape:
+            self.close()
+            return
+
         if event.key() == Qt.Key_F11:
             if self.isFullScreen():
                 self.showNormal()
@@ -317,7 +369,8 @@ class VolyaLivingWindow(QMainWindow):
             # Переключение видимости панелей
             is_vis = not self.control_pill.isVisible()
             self.control_pill.setVisible(is_vis)
-            self.player_pill.setVisible(is_vis)
+            if self.is_authenticated:
+                self.player_pill.setVisible(is_vis)
             self.lbl_hint.setVisible(is_vis)
         else:
             super().keyPressEvent(event)

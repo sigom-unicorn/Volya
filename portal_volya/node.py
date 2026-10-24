@@ -380,6 +380,18 @@ class VolyaNode:
         self.identities_mgr.add_or_update_player(dev_id)
         return True
 
+    def record_failed_pin_attempt(self, pubkey: str) -> tuple[int, int]:
+        """Фиксация неудачной попытки ввода ПИН-кода и проверка на период остывания."""
+        return self.identities_mgr.record_failed_pin_attempt(pubkey)
+
+    def reset_failed_pin_attempts(self, pubkey: str) -> None:
+        """Сброс счётчика неудачных попыток ввода ПИН-кода при успехе."""
+        self.identities_mgr.reset_failed_pin_attempts(pubkey)
+
+    def get_pin_lockout_seconds(self, pubkey: str) -> int:
+        """Получение оставшегося времени остывания в секундах."""
+        return self.identities_mgr.get_pin_lockout_seconds(pubkey)
+
     def get_player_avatar_bytes(self, pubkey: str) -> Optional[bytes]:
         """Получение байтов аватара игрока из хранилища RocksDB."""
         avatar_bytes = self.dag_store.get_player_avatar(pubkey)

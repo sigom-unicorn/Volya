@@ -10,13 +10,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import secrets
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timezone
 
 from portal_volya.core.crypto import KeyPair
 from portal_volya.core.genesis import (
@@ -43,6 +44,8 @@ class DevicePlayerIdentity:
         pin_salt: Optional[str] = None,
         bio: str = "",
         google_api_key: Optional[str] = None,
+        failed_pin_attempts: int = 0,
+        locked_until: Optional[str] = None,
         created_at: Optional[str] = None,
         last_active_at: Optional[str] = None,
     ) -> None:
@@ -52,6 +55,8 @@ class DevicePlayerIdentity:
         self.pin_salt = pin_salt
         self.bio = bio
         self.google_api_key = google_api_key
+        self.failed_pin_attempts = failed_pin_attempts
+        self.locked_until = locked_until
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_active_at = last_active_at or self.created_at
 
@@ -75,18 +80,56 @@ class DevicePlayerIdentity:
         salt = secrets.token_hex(16)
         self.pin_salt = salt
         self.pin_hash = _hash_pin(clean_pin, salt)
+        self.reset_failed_pin_attempts()
 
     def remove_pin(self) -> None:
         """Удаление ПИН-кода."""
         self.pin_salt = None
         self.pin_hash = None
+        self.reset_failed_pin_attempts()
 
     def verify_pin(self, pin: str) -> bool:
-        """Проверка введённого ПИН-кода."""
+        """Проверка введённого ПИН-кода (без учёта таймера блокировки)."""
         if not self.has_pin:
             return True
         clean_pin = pin.strip()
         return _hash_pin(clean_pin, self.pin_salt or "") == self.pin_hash
+
+    def get_lockout_remaining_seconds(self) -> int:
+        """Оставшееся время остывания в секундах (0, если блокировки нет)."""
+        if not self.locked_until:
+            return 0
+        try:
+            locked_dt = datetime.fromisoformat(self.locked_until)
+            now = datetime.now(timezone.utc)
+            rem = (locked_dt - now).total_seconds()
+            if rem > 0:
+                return math.ceil(rem)
+            else:
+                self.locked_until = None
+                return 0
+        except Exception:
+            self.locked_until = None
+            return 0
+
+    def record_failed_pin_attempt(self) -> tuple[int, int]:
+        """
+        Регистрация неверной попытки ввода ПИН-кода.
+        Возвращает кортеж: (число_неверных_попыток, секунд_остывания_если_заблокировано).
+        При 3-й неверной попытке активируется период остывания 30 секунд.
+        """
+        self.failed_pin_attempts += 1
+        if self.failed_pin_attempts >= 3:
+            self.failed_pin_attempts = 0
+            locked_dt = datetime.now(timezone.utc) + timedelta(seconds=30)
+            self.locked_until = locked_dt.isoformat()
+            return (3, 30)
+        return (self.failed_pin_attempts, 0)
+
+    def reset_failed_pin_attempts(self) -> None:
+        """Сброс счётчика попыток и блокировки при успешном вводе."""
+        self.failed_pin_attempts = 0
+        self.locked_until = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +140,8 @@ class DevicePlayerIdentity:
             "pin_salt": self.pin_salt,
             "bio": self.bio,
             "google_api_key": self.google_api_key,
+            "failed_pin_attempts": self.failed_pin_attempts,
+            "locked_until": self.locked_until,
             "created_at": self.created_at,
             "last_active_at": self.last_active_at,
         }
@@ -111,6 +156,8 @@ class DevicePlayerIdentity:
             pin_salt=data.get("pin_salt"),
             bio=data.get("bio", ""),
             google_api_key=data.get("google_api_key"),
+            failed_pin_attempts=data.get("failed_pin_attempts", 0),
+            locked_until=data.get("locked_until"),
             created_at=data.get("created_at"),
             last_active_at=data.get("last_active_at"),
         )
@@ -279,3 +326,30 @@ class DeviceIdentitiesManager:
             self._save()
             return True
         return False
+
+    def record_failed_pin_attempt(self, pubkey: str) -> tuple[int, int]:
+        """Регистрирует неверную попытку и сохраняет состояние на диск."""
+        ident = self.get_player(pubkey)
+        if not ident:
+            return (0, 0)
+        res = ident.record_failed_pin_attempt()
+        self._save()
+        return res
+
+    def reset_failed_pin_attempts(self, pubkey: str) -> None:
+        """Сбрасывает счетчик неудачных попыток и сохраняет на диск."""
+        ident = self.get_player(pubkey)
+        if ident:
+            ident.reset_failed_pin_attempts()
+            self._save()
+
+    def get_pin_lockout_seconds(self, pubkey: str) -> int:
+        """Возвращает оставшееся время остывания в секундах."""
+        ident = self.get_player(pubkey)
+        if not ident:
+            return 0
+        rem = ident.get_lockout_remaining_seconds()
+        if rem == 0 and ident.locked_until is not None:
+            ident.locked_until = None
+            self._save()
+        return rem
