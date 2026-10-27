@@ -216,6 +216,7 @@ class VolyaNode:
         # Генерация или обработка аватара
         if custom_avatar_data:
             avatar_bytes = process_custom_avatar_png(custom_avatar_data)
+            self.dag_store.set_meta(f"custom_avatar:{dev_id.pubkey}", "1")
         else:
             avatar_bytes = generate_default_avatar_png(dev_id.username, dev_id.pubkey)
 
@@ -420,6 +421,7 @@ class VolyaNode:
         """Установка пользовательского аватара игроку с сохранением в dag.rocksdb."""
         avatar_bytes = process_custom_avatar_png(avatar_data)
         avatar_hash = self.dag_store.set_player_avatar(pubkey, avatar_bytes)
+        self.dag_store.set_meta(f"custom_avatar:{pubkey}", "1")
         return avatar_hash
 
     def set_player_pin(self, pubkey: str, new_pin: str, current_pin: Optional[str] = None) -> bool:

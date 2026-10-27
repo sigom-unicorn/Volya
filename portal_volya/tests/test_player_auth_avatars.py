@@ -36,11 +36,19 @@ def temp_node_dir():
 
 
 def test_avatar_generator(qapp):
-    """Проверка генерации аватаров по умолчанию и обработки пользовательских."""
+    """Проверка генерации аватаров по умолчанию из 9 золотых нитей и обработки пользовательских."""
     pk = "a" * 64
     png_bytes = generate_default_avatar_png("Алексей", pk, size=128)
     assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
     assert len(png_bytes) > 500
+
+    # Детерминированность: одинаковые параметры дают идентичный узор
+    png_bytes_again = generate_default_avatar_png("Алексей", pk, size=128)
+    assert png_bytes == png_bytes_again
+
+    # Разные игроки получают уникальные узоры нитей
+    png_bytes_other = generate_default_avatar_png("Сигом", "b" * 64, size=128)
+    assert png_bytes != png_bytes_other
 
     # Обработка пользовательского
     processed = process_custom_avatar_png(png_bytes, size=64)

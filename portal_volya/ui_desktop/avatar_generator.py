@@ -1,8 +1,8 @@
 """
 Генератор аватарок по умолчанию и обработчик пользовательских аватаров для «Воли».
 
-1. generate_default_avatar_png: Процедурный генератор гармоничного аватара на PySide6 (256x256).
-   Детерминированная священная палитра на основе pubkey и первая буква имени в золотом ореоле.
+1. generate_default_avatar_png: Процедурный генератор аватара из 9 золотых нитей (прямые и дуги)
+   внутри священного круглого медальона на основе ключа и имени игрока.
 2. process_custom_avatar_png: Квадратная обрезка и масштабирование загруженного изображения в PNG.
 """
 
@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import math
+import random
 from pathlib import Path
 from typing import Optional
 
@@ -19,97 +21,122 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QImage,
-    QLinearGradient,
     QPainter,
+    QPainterPath,
     QPen,
     QRadialGradient,
 )
 
 
-# Канонические гармоничные палитры для пиксельных аватаров-тотемов
-PIXEL_PALETTES = [
-    # 0. Изумрудная Вольница (хвойный, нефрит, мята, янтарный блик)
-    {
-        "bg_center": "#081e14",
-        "bg_edge": "#020a06",
-        "cell_empty": "#0a261a",
-        "colors": ["#064e3b", "#059669", "#34d399", "#f59e0b"],
-        "rim": "#d4af37",
-    },
-    # 1. Полуночный Сапфир (глубокий ультрамарин, синий кобальт, электрик, золото)
-    {
-        "bg_center": "#0a1936",
-        "bg_edge": "#030814",
-        "cell_empty": "#0e2652",
-        "colors": ["#1e3a8a", "#2563eb", "#60a5fa", "#fbbf24"],
-        "rim": "#93c5fd",
-    },
-    # 2. Небесная Лазурь и Северное Сияние (глубокий циан, аквамарин, бирюза, солнце)
-    {
-        "bg_center": "#06222b",
-        "bg_edge": "#020d12",
-        "cell_empty": "#0a3543",
-        "colors": ["#0e7490", "#06b6d4", "#67e8f9", "#fef08a"],
-        "rim": "#38bdf8",
-    },
-    # 3. Солнечный Янтарь (темный кедр, терракота, золото, искра)
-    {
-        "bg_center": "#241004",
-        "bg_edge": "#0f0601",
-        "cell_empty": "#3d1b06",
-        "colors": ["#9a3412", "#d97706", "#fbbf24", "#fef9c3"],
-        "rim": "#f59e0b",
-    },
-    # 4. Аметистовый Кон (королевский пурпур, лаванда, неоновый аметист, роза)
-    {
-        "bg_center": "#1c0933",
-        "bg_edge": "#0b0314",
-        "cell_empty": "#300f57",
-        "colors": ["#6b21a8", "#9333ea", "#c084fc", "#f472b6"],
-        "rim": "#e9d5ff",
-    },
-    # 5. Огненный Рубин (темный обсидиан, багрянец, пламень, янтарь)
-    {
-        "bg_center": "#24070e",
-        "bg_edge": "#0f0205",
-        "cell_empty": "#400c19",
-        "colors": ["#9f1239", "#e11d48", "#fb7185", "#fde047"],
-        "rim": "#fb7185",
-    },
-    # 6. Ноосферный Нефрит (океаническая бездна, малахит, светлый ментол, лунный перламутр)
-    {
-        "bg_center": "#041f20",
-        "bg_edge": "#010c0d",
-        "cell_empty": "#083335",
-        "colors": ["#115e59", "#0d9488", "#2dd4bf", "#f0fdf4"],
-        "rim": "#5eead4",
-    },
-    # 7. Золотая Заря (бронза, охра, античное золото, солнечный свет)
-    {
-        "bg_center": "#211805",
-        "bg_edge": "#0e0a02",
-        "cell_empty": "#3b2b09",
-        "colors": ["#854d0e", "#ca8a04", "#facc15", "#fef9c3"],
-        "rim": "#d4af37",
-    },
+# Гармоничные фоновые палитры ноосферного пространства для круглого медальона
+BG_MEDALLION_PALETTES = [
+    # 0. Янтарная полночь (глубокий теплый обсидиан)
+    {"bg_center": "#18120a", "bg_edge": "#0a0704", "rim": "#d4af37"},
+    # 1. Хвойный изумруд (глубокий нефрит)
+    {"bg_center": "#0e1614", "bg_edge": "#040908", "rim": "#d4af37"},
+    # 2. Полуночный сапфир (глубокий кобальт)
+    {"bg_center": "#0e131d", "bg_edge": "#05070c", "rim": "#d4af37"},
+    # 3. Аметистовый кон (ночной пурпур)
+    {"bg_center": "#150e1c", "bg_edge": "#07040a", "rim": "#d4af37"},
+    # 4. Космический обсидиан (глубокий антрацит)
+    {"bg_center": "#141414", "bg_edge": "#050505", "rim": "#d4af37"},
+    # 5. Золотая заря (темная бронза)
+    {"bg_center": "#1a150c", "bg_edge": "#090703", "rim": "#d4af37"},
 ]
 
 # Для обратной совместимости
-SACRED_PALETTES = PIXEL_PALETTES
+PIXEL_PALETTES = BG_MEDALLION_PALETTES
+SACRED_PALETTES = BG_MEDALLION_PALETTES
+
+
+def _intersect_segment_bezier(
+    p1: QPointF, p2: QPointF, pa: QPointF, pb: QPointF, ctrl: QPointF
+) -> list[tuple[float, QPointF]]:
+    """
+    Вычисляет точки пересечения отрезка p1->p2 с квадратичной кривой Безье (pa, ctrl, pb).
+    Возвращает список кортежей (t, QPointF), где t in (0, 1] — параметр вдоль p1->p2.
+    """
+    v0 = (pa.x(), pa.y())
+    v1 = (2 * (ctrl.x() - pa.x()), 2 * (ctrl.y() - pa.y()))
+    v2 = (pb.x() - 2 * ctrl.x() + pa.x(), pb.y() - 2 * ctrl.y() + pa.y())
+
+    dx = p2.x() - p1.x()
+    dy = p2.y() - p1.y()
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < 1e-9:
+        return []
+
+    nx = -dy
+    ny = dx
+
+    a = nx * v2[0] + ny * v2[1]
+    b = nx * v1[0] + ny * v1[1]
+    c = nx * (v0[0] - p1.x()) + ny * (v0[1] - p1.y())
+
+    roots: list[float] = []
+    if abs(a) < 1e-9:
+        if abs(b) > 1e-9:
+            s = -c / b
+            if 0.0 <= s <= 1.0:
+                roots.append(s)
+    else:
+        disc = b * b - 4 * a * c
+        if disc >= 0:
+            sq = math.sqrt(disc)
+            s1 = (-b - sq) / (2 * a)
+            s2 = (-b + sq) / (2 * a)
+            for s in (s1, s2):
+                if 0.0 <= s <= 1.0:
+                    roots.append(s)
+
+    intersections: list[tuple[float, QPointF]] = []
+    for s in roots:
+        px = v0[0] + v1[0] * s + v2[0] * s * s
+        py = v0[1] + v1[1] * s + v2[1] * s * s
+        t = ((px - p1.x()) * dx + (py - p1.y()) * dy) / seg_len_sq
+        if 0.02 < t <= 1.0:
+            intersections.append((t, QPointF(px, py)))
+
+    return intersections
+
+
+def _segments_intersect(
+    p1: QPointF, p2: QPointF, q1: QPointF, q2: QPointF
+) -> bool:
+    """
+    Проверяет, пересекаются ли два отрезка p1->p2 и q1->q2 во внутренних точках.
+    """
+    dx1 = p2.x() - p1.x()
+    dy1 = p2.y() - p1.y()
+    dx2 = q2.x() - q1.x()
+    dy2 = q2.y() - q1.y()
+
+    denom = dx1 * dy2 - dy1 * dx2
+    if abs(denom) < 1e-9:
+        return False  # Отрезки параллельны или лежат на одной прямой
+
+    t = ((q1.x() - p1.x()) * dy2 - (q1.y() - p1.y()) * dx2) / denom
+    u = ((q1.x() - p1.x()) * dy1 - (q1.y() - p1.y()) * dx1) / denom
+
+    return (0.01 < t < 0.99) and (0.01 < u < 0.99)
 
 
 def generate_default_avatar_png(username: str, pubkey: str, size: int = 256) -> bytes:
     """
-    Генерация уникального процедурного пиксельного аватара (пиксельная абстракция / цифровой тотем).
-    Построен на базе 8x8 билинейно-симметричной сетки на основе SHA-256 хэша ключа и имени.
+    Генерация уникального процедурного аватара из 9 золотых нитей (смесь прямых и дуг).
+    Все линии строго одного золотого цвета и одинаковой толщины.
+    Дуги начинаются и заканчиваются строго на окружности аватарки.
+    Прямые нити начинаются на окружности и заканчиваются в месте пересечения с дуговой, если пересекаются
+    (или доходят до окружности, если пересечения нет).
+    Прямые нити гарантированно НЕ пересекаются друг с другом.
+    Детерминированно строится на основе SHA-256 хэша ключа и имени игрока.
     """
     clean_name = username.strip() or "Вольный Игрок"
     seed_str = f"{pubkey}:{clean_name}"
     digest = hashlib.sha256(seed_str.encode("utf-8")).digest()
+    rng = random.Random(digest)
 
-    # Детерминированный выбор палитры по первому байту
-    palette_idx = digest[0] % len(PIXEL_PALETTES)
-    palette = PIXEL_PALETTES[palette_idx]
+    scale = max(0.1, size / 256.0)
 
     image = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
     image.fill(Qt.transparent)
@@ -118,97 +145,138 @@ def generate_default_avatar_png(username: str, pubkey: str, size: int = 256) -> 
     painter.setRenderHint(QPainter.Antialiasing, True)
     painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-    center = QPointF(size / 2.0, size / 2.0)
-    radius = (size / 2.0) - 5.0
+    cx, cy = size / 2.0, size / 2.0
+    center = QPointF(cx, cy)
+    radius = (size / 2.0) - (4.0 * scale)
 
     # 1. Фоновый круглый медальон (космический радиальный градиент)
     rad_grad = QRadialGradient(center, radius)
-    rad_grad.setColorAt(0.0, QColor(palette["bg_center"]))
-    rad_grad.setColorAt(1.0, QColor(palette["bg_edge"]))
+    rad_grad.setColorAt(0.0, QColor("#18140e"))
+    rad_grad.setColorAt(0.7, QColor("#0a0805"))
+    rad_grad.setColorAt(1.0, QColor("#020202"))
 
     painter.setPen(Qt.NoPen)
     painter.setBrush(QBrush(rad_grad))
     painter.drawEllipse(center, radius, radius)
 
-    # 2. Внешний сакральный обод (тонкая золотая/светлая линия)
-    pen_rim = QPen(QColor(palette["rim"]), 2.5)
-    painter.setPen(pen_rim)
+    # 2. Единый золотой цвет и единая толщина всех линий
+    gold_color = QColor("#d4af37")
+    line_width = 1.6 * scale
+
+    # Внешняя золотая окружность аватарки
+    rim_pen = QPen(gold_color, 2.0 * scale)
+    painter.setPen(rim_pen)
     painter.setBrush(Qt.NoBrush)
-    painter.drawEllipse(center, radius - 2.0, radius - 2.0)
+    painter.drawEllipse(center, radius, radius)
 
-    # 3. Внутренняя тонкая пунктирная орбита
-    pen_orbit = QPen(QColor(palette["rim"]), 1.0)
-    pen_orbit.setStyle(Qt.DotLine)
-    painter.setPen(pen_orbit)
-    painter.drawEllipse(center, radius - 8.0, radius - 8.0)
+    # 3. Точка строго на окружности
+    def point_on_circle(ang: float) -> QPointF:
+        return QPointF(cx + radius * math.cos(ang), cy + radius * math.sin(ang))
 
-    # 4. Построение 8x8 симметричной матрицы пикселей
-    grid_size = 8
-    cell_size = 19.0
-    total_grid_w = grid_size * cell_size
-    offset_x = (size - total_grid_w) / 2.0
-    offset_y = (size - total_grid_w) / 2.0
+    # 4. Ровно 9 нитей: случайная смесь прямых линий и дуг
+    num_threads = 9
+    num_arcs = rng.choice([4, 5])
+    num_straight = num_threads - num_arcs
 
-    grid = [[-1 for _ in range(grid_size)] for _ in range(grid_size)]
-    col_filled_count = [0] * grid_size
+    # Сначала генерируем дуговые нити (от окружности к окружности)
+    arc_data: list[tuple[QPointF, QPointF, QPointF, QPainterPath]] = []
+    for _ in range(num_arcs):
+        ang1 = rng.uniform(0, 2 * math.pi)
+        sep = rng.uniform(math.pi * 0.25, math.pi * 1.75)
+        ang2 = (ang1 + sep) % (2 * math.pi)
 
-    for row in range(grid_size):
-        for col in range(grid_size // 2):
-            byte_val = digest[(row * 4 + col) % len(digest)]
-            mod_val = byte_val % 100
+        pa = point_on_circle(ang1)
+        pb = point_on_circle(ang2)
 
-            # Вероятностное распределение плотности
-            if mod_val < 33:
-                color_idx = -1
-            elif mod_val < 59:
-                color_idx = 0
-            elif mod_val < 83:
-                color_idx = 1
-            elif mod_val < 95:
-                color_idx = 2
-            else:
-                color_idx = 3
+        mx = (pa.x() + pb.x()) / 2.0
+        my = (pa.y() + pb.y()) / 2.0
+        dx = pb.x() - pa.x()
+        dy = pb.y() - pa.y()
+        chord_len = math.hypot(dx, dy)
 
-            grid[row][col] = color_idx
-            grid[row][grid_size - 1 - col] = color_idx
-            if color_idx >= 0:
-                col_filled_count[col] += 1
-                col_filled_count[grid_size - 1 - col] += 1
+        nx = -dy / (chord_len + 1e-5)
+        ny = dx / (chord_len + 1e-5)
 
-    # Защита от пустоты: центральные столбцы 3 и 4 должны иметь устойчивое ядро
-    if col_filled_count[3] < 3:
-        for r in (2, 3, 4, 5):
-            if grid[r][3] < 0:
-                grid[r][3] = 1
-                grid[r][4] = 1
+        to_cx = cx - mx
+        to_cy = cy - my
+        dist_to_center = math.hypot(to_cx, to_cy)
 
-    # 5. Отрисовка пиксельных блоков
-    for r in range(grid_size):
-        for c in range(grid_size):
-            cx = offset_x + c * cell_size
-            cy = offset_y + r * cell_size
-            rect = QRectF(cx + 1.2, cy + 1.2, cell_size - 2.4, cell_size - 2.4)
+        if dist_to_center > 1.0:
+            dir_x = to_cx / dist_to_center
+            dir_y = to_cy / dist_to_center
+            bend_depth = rng.uniform(0.35, 1.2) * (chord_len * 0.45)
+            side = 1.0 if rng.random() < 0.75 else -0.4
+            ctrl = QPointF(mx + dir_x * bend_depth * side, my + dir_y * bend_depth * side)
+        else:
+            bend = rng.uniform(0.3, 0.7) * radius * rng.choice([-1, 1])
+            ctrl = QPointF(cx + nx * bend, cy + ny * bend)
 
-            color_idx = grid[r][c]
-            if color_idx >= 0:
-                cell_color = QColor(palette["colors"][color_idx])
-                # Рисуем микро-блок со слегка скругленными краями (2.0px)
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(cell_color))
-                painter.drawRoundedRect(rect, 2.0, 2.0)
+        path = QPainterPath()
+        path.moveTo(pa)
+        path.quadTo(ctrl, pb)
+        arc_data.append((pa, pb, ctrl, path))
 
-                # Для ярких акцентов (цвет 2 и 3) добавляем тонкий светящийся центр
-                if color_idx >= 2:
-                    spark_rect = QRectF(cx + 4.0, cy + 4.0, cell_size - 8.0, cell_size - 8.0)
-                    painter.setBrush(QBrush(QColor(255, 255, 255, 90)))
-                    painter.drawRoundedRect(spark_rect, 1.0, 1.0)
-            else:
-                # Мягкая темная ячейка кибер-матрицы
-                faint_color = QColor(palette["cell_empty"])
-                faint_color.setAlpha(60)
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(faint_color))
-                painter.drawRoundedRect(rect, 1.5, 1.5)
+    # Затем генерируем прямые нити:
+    # 1. Начинаются на окружности аватарки.
+    # 2. Заканчиваются в месте первого пересечения с дуговой нитью (если пересекаются).
+    # 3. Гарантированно НЕ пересекаются с другими прямыми нитями.
+    straight_paths: list[QPainterPath] = []
+    placed_segments: list[tuple[QPointF, QPointF]] = []
+
+    for _ in range(num_straight):
+        best_candidate: Optional[tuple[QPointF, QPointF]] = None
+
+        for _ in range(100):
+            ang1 = rng.uniform(0, 2 * math.pi)
+            sep = rng.uniform(math.pi * 0.25, math.pi * 1.75)
+            ang2 = (ang1 + sep) % (2 * math.pi)
+
+            p1 = point_on_circle(ang1)
+            p2 = point_on_circle(ang2)
+
+            min_t = 1.0
+            end_pt = p2
+
+            for pa, pb, ctrl, _ in arc_data:
+                hits = _intersect_segment_bezier(p1, p2, pa, pb, ctrl)
+                for t_val, pt in hits:
+                    if t_val < min_t:
+                        min_t = t_val
+                        end_pt = pt
+
+            # Проверяем, не пересекается ли отрезок p1->end_pt с уже размещенными прямыми нитями
+            crosses_existing = False
+            for q1, q2 in placed_segments:
+                if _segments_intersect(p1, end_pt, q1, q2):
+                    crosses_existing = True
+                    break
+
+            if not crosses_existing:
+                best_candidate = (p1, end_pt)
+                break
+
+        if best_candidate is not None:
+            p1, end_pt = best_candidate
+            placed_segments.append((p1, end_pt))
+            path = QPainterPath()
+            path.moveTo(p1)
+            path.lineTo(end_pt)
+            straight_paths.append(path)
+
+    all_paths = [ad[3] for ad in arc_data] + straight_paths
+
+    # 5. Отрисовка всех нитей строго единого золотого цвета и одинаковой толщины
+    glow_pen = QPen(QColor(212, 175, 55, 60), line_width + (2.0 * scale))
+    glow_pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(glow_pen)
+    for p in all_paths:
+        painter.drawPath(p)
+
+    core_pen = QPen(gold_color, line_width)
+    core_pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(core_pen)
+    for p in all_paths:
+        painter.drawPath(p)
 
     painter.end()
     return image_to_png_bytes(image)
