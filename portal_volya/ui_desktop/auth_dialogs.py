@@ -7,7 +7,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QByteArray, QRectF, QSize, QTimer, Qt, Signal
+from PySide6.QtCore import (
+    QByteArray,
+    QRectF,
+    QRegularExpression,
+    QSize,
+    QTimer,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -17,6 +25,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPixmap,
+    QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
     QDialog,
@@ -60,7 +69,9 @@ def make_circular_pixmap(data: bytes, size: int = 48) -> QPixmap:
     path = QPainterPath()
     path.addEllipse(0, 0, size, size)
     painter.setClipPath(path)
-    painter.drawImage(0, 0, scaled)
+    x_offset = int((size - scaled.width()) / 2)
+    y_offset = int((size - scaled.height()) / 2)
+    painter.drawImage(x_offset, y_offset, scaled)
     painter.end()
 
     return QPixmap.fromImage(target)
@@ -176,6 +187,9 @@ class PinCodeModal(QDialog):
         self.pin_input = QLineEdit()
         self.pin_input.setEchoMode(QLineEdit.Password)
         self.pin_input.setMaxLength(4)
+        self.pin_input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^[0-9]{0,4}$"), self)
+        )
         self.pin_input.setAlignment(Qt.AlignCenter)
         self.pin_input.setFont(QFont("Segoe UI", 20, QFont.Bold))
         self.pin_input.setPlaceholderText("••••")
@@ -566,6 +580,9 @@ class CreatePlayerModal(QDialog):
         card_layout.addWidget(QLabel("ПИН-код для защиты на этом ПК (4 цифры, по желанию):"))
         self.input_pin = QLineEdit()
         self.input_pin.setMaxLength(4)
+        self.input_pin.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^[0-9]{0,4}$"), self)
+        )
         self.input_pin.setPlaceholderText("Оставьте пустым, если ПИН не требуется")
         card_layout.addWidget(self.input_pin)
 
@@ -677,6 +694,9 @@ class ImportKeyModal(QDialog):
         card_layout.addWidget(QLabel("ПИН-код для этого устройства (4 цифры, по желанию):"))
         self.input_pin = QLineEdit()
         self.input_pin.setMaxLength(4)
+        self.input_pin.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^[0-9]{0,4}$"), self)
+        )
         self.input_pin.setPlaceholderText("4 цифры")
         card_layout.addWidget(self.input_pin)
 

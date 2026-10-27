@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QRegularExpression, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -17,6 +17,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPixmap,
+    QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
     QDialog,
@@ -75,11 +76,15 @@ class ChangePinModal(QDialog):
         card_layout.addWidget(lbl_title)
 
         self.old_pin_input: Optional[QLineEdit] = None
+        pin_validator = QRegularExpressionValidator(
+            QRegularExpression(r"^[0-9]{0,4}$"), self
+        )
         if has_existing_pin:
             card_layout.addWidget(QLabel("Текущий ПИН-код (4 цифры):"))
             self.old_pin_input = QLineEdit()
             self.old_pin_input.setEchoMode(QLineEdit.Password)
             self.old_pin_input.setMaxLength(4)
+            self.old_pin_input.setValidator(pin_validator)
             self.old_pin_input.setPlaceholderText("••••")
             card_layout.addWidget(self.old_pin_input)
 
@@ -87,6 +92,7 @@ class ChangePinModal(QDialog):
         self.new_pin_input = QLineEdit()
         self.new_pin_input.setEchoMode(QLineEdit.Password)
         self.new_pin_input.setMaxLength(4)
+        self.new_pin_input.setValidator(pin_validator)
         self.new_pin_input.setPlaceholderText("••••")
         card_layout.addWidget(self.new_pin_input)
 
@@ -94,6 +100,7 @@ class ChangePinModal(QDialog):
         self.repeat_pin_input = QLineEdit()
         self.repeat_pin_input.setEchoMode(QLineEdit.Password)
         self.repeat_pin_input.setMaxLength(4)
+        self.repeat_pin_input.setValidator(pin_validator)
         self.repeat_pin_input.setPlaceholderText("••••")
         card_layout.addWidget(self.repeat_pin_input)
 

@@ -225,6 +225,32 @@ class DeviceIdentitiesManager:
             self._identities[sigom_kp.public_hex] = sigom_id
             self._active_pubkey = sigom_kp.public_hex
 
+        # Автоматическая очистка дубликатов по имени игрока на устройстве
+        seen_names: dict[str, str] = {}
+        dups_to_remove = []
+        sigom_gen_pk = derive_genesis_keypair(SIGOM_SEED).public_hex
+        for pk, ident in list(self._identities.items()):
+            u_lower = ident.username.strip().lower()
+            if u_lower in seen_names:
+                prev_pk = seen_names[u_lower]
+                if pk == sigom_gen_pk:
+                    dups_to_remove.append(prev_pk)
+                    seen_names[u_lower] = pk
+                elif prev_pk == sigom_gen_pk:
+                    dups_to_remove.append(pk)
+                else:
+                    dups_to_remove.append(pk)
+            else:
+                seen_names[u_lower] = pk
+
+        for pk in dups_to_remove:
+            if pk in self._identities:
+                del self._identities[pk]
+
+        if self._active_pubkey not in self._identities:
+            players = self.list_players()
+            self._active_pubkey = players[0].pubkey if players else None
+
         self._save()
 
     def _save(self) -> None:
@@ -251,6 +277,14 @@ class DeviceIdentitiesManager:
         """Получить идентичность игрока по pubkey."""
         return self._identities.get(pubkey)
 
+    def get_player_by_username(self, username: str) -> Optional[DevicePlayerIdentity]:
+        """Поиск идентичности игрока по вольному имени (без учёта регистра)."""
+        target = username.strip().lower()
+        for ident in self.list_players():
+            if ident.username.strip().lower() == target:
+                return ident
+        return None
+
     def get_active_player(self) -> Optional[DevicePlayerIdentity]:
         """Получить текущего активного игрока на устройстве."""
         if self._active_pubkey and self._active_pubkey in self._identities:
@@ -268,9 +302,15 @@ class DeviceIdentitiesManager:
         return None
 
     def add_or_update_player(self, identity: DevicePlayerIdentity) -> None:
-        """Добавить или обновить идентичность игрока на устройстве."""
+        """Добавить или обновить идентичность игрока на устройстве (гарантирует уникальность имени)."""
         if identity.pubkey in self._excluded_pubkeys:
             return
+        # Очищаем старые дубликаты с тем же именем, но другим pubkey
+        target_name = identity.username.strip().lower()
+        for pk, existing in list(self._identities.items()):
+            if pk != identity.pubkey and existing.username.strip().lower() == target_name:
+                del self._identities[pk]
+
         self._identities[identity.pubkey] = identity
         self._active_pubkey = identity.pubkey
         self._save()
@@ -282,10 +322,17 @@ class DeviceIdentitiesManager:
         bio: str = "",
     ) -> DevicePlayerIdentity:
         """Регистрация нового вольного игрока со свежей ключевой парой Ed25519."""
+        clean_name = username.strip() or "Вольный Игрок"
+        existing = self.get_player_by_username(clean_name)
+        if existing:
+            raise ValueError(
+                f"К сожалению, имя «{clean_name}» уже занято на этом устройстве. Пожалуйста, подберите себе другое вольное имя."
+            )
+
         kp = KeyPair.generate()
         identity = DevicePlayerIdentity(
             keypair=kp,
-            username=username.strip() or "Вольный Игрок",
+            username=clean_name,
             bio=bio.strip(),
         )
         if pin and pin.strip():
@@ -306,9 +353,16 @@ class DeviceIdentitiesManager:
         if kp.public_hex in self._excluded_pubkeys:
             raise ValueError("Этот ключ зарезервирован для системного спутника Игры.")
 
+        clean_name = username.strip() or "Вольный Игрок"
+
+        # Если на устройстве был игрок с таким же именем, удаляем старый конфликт
+        existing = self.get_player_by_username(clean_name)
+        if existing and existing.pubkey != kp.public_hex:
+            del self._identities[existing.pubkey]
+
         identity = DevicePlayerIdentity(
             keypair=kp,
-            username=username.strip() or "Вольный Игрок",
+            username=clean_name,
             bio=bio.strip(),
         )
         if pin and pin.strip():

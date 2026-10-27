@@ -188,9 +188,27 @@ class VolyaNode:
         3. Устанавливается 0 капель совести в Чаше Души.
         4. Создается и сохраняется аватар в dag.rocksdb.
         """
+        clean_name = username.strip()
+        if not clean_name:
+            raise ValueError("Вольное имя игрока не может быть пустым.")
+
+        # Проверка уникальности вольного имени в Merkle DAG
+        existing_in_dag = self.dag_store.get_player_by_username(clean_name)
+        if existing_in_dag:
+            raise ValueError(
+                f"К сожалению, имя «{clean_name}» уже занято в Игре. Пожалуйста, подберите себе другое вольное имя."
+            )
+
+        # Проверка уникальности вольного имени на этом компьютере
+        existing_on_device = self.identities_mgr.get_player_by_username(clean_name)
+        if existing_on_device:
+            raise ValueError(
+                f"К сожалению, имя «{clean_name}» уже занято на этом устройстве. Пожалуйста, подберите себе другое вольное имя."
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         dev_id = self.identities_mgr.register_new_player(
-            username=username,
+            username=clean_name,
             pin=pin,
             bio=bio,
         )
@@ -288,15 +306,61 @@ class VolyaNode:
         bio: str = "",
     ) -> Player:
         """Импорт игрока по приватному ключу и переключение на него."""
+        clean_key = private_key_hex.strip()
+        kp = KeyPair.from_private_hex(clean_key)
+        clean_name = username.strip()
+
+        # Если в DAG уже есть игрок с этим pubkey, синхронизируем имя
+        existing = self.dag_store.get_player(kp.public_hex)
+        if existing:
+            clean_name = existing.username
+        else:
+            # Проверяем, не занято ли имя другим pubkey
+            conflict = self.dag_store.get_player_by_username(clean_name)
+            if conflict and conflict.pubkey != kp.public_hex:
+                raise ValueError(
+                    f"Имя «{clean_name}» уже закреплено за другим публичным ключом ({conflict.pubkey[:12]}...)."
+                )
+
         dev_id = self.identities_mgr.import_player_key(
-            private_key_hex=private_key_hex,
-            username=username,
+            private_key_hex=clean_key,
+            username=clean_name,
             pin=pin,
             bio=bio,
         )
-        existing = self.dag_store.get_player(dev_id.pubkey)
+
         if not existing:
-            self.create_neophyte_player(username=dev_id.username, bio=bio, pin=pin)
+            now = datetime.now(timezone.utc).isoformat()
+            avatar_bytes = generate_default_avatar_png(dev_id.username, dev_id.pubkey)
+            avatar_hash = self.dag_store.put_blob(avatar_bytes)
+            player = Player(
+                pubkey=dev_id.pubkey,
+                username=dev_id.username,
+                conscience_drops=0,
+                bio=bio,
+                avatar_hash=avatar_hash,
+                roles=[
+                    PlayerRoleAssignment(
+                        quest_id="quest-posvyashchenie",
+                        role_title="Неофит",
+                        assigned_at=now,
+                    )
+                ],
+                created_at=now,
+            )
+            node_id = hash_canonical(player.model_dump())
+            sig = dev_id.keypair.sign(node_id.encode("utf-8"))
+            dag_node = DagNode(
+                id=node_id,
+                node_type=DagNodeType.PLAYER,
+                author_pubkey=dev_id.pubkey,
+                parents=[],
+                payload=player.model_dump(),
+                created_at=now,
+                signature=sig,
+            )
+            self.dag_store.put_node(dag_node)
+            self.switch_player(dev_id.pubkey, pin=pin)
         else:
             self.switch_player(dev_id.pubkey, pin=pin)
         return self.my_player

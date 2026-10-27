@@ -101,6 +101,28 @@ class DagStore:
         self._h_blobs = self.db.get_column_family_handle(CF_BLOBS)
         self._h_meta = self.db.get_column_family_handle(CF_META)
 
+        # Автоматическая проверка и очистка дубликатов имён игроков в летописи
+        self._deduplicate_players()
+
+    def _deduplicate_players(self) -> None:
+        """Очищает устаревшие дубликаты имён игроков, оставляя запись с наибольшим опытом совести."""
+        seen: dict[str, Player] = {}
+        dups_to_delete: list[str] = []
+        for p in self.get_all_players():
+            u_lower = p.username.strip().lower()
+            if u_lower in seen:
+                prev = seen[u_lower]
+                if p.conscience_drops >= prev.conscience_drops:
+                    dups_to_delete.append(prev.pubkey)
+                    seen[u_lower] = p
+                else:
+                    dups_to_delete.append(p.pubkey)
+            else:
+                seen[u_lower] = p
+
+        for pk in dups_to_delete:
+            self.delete_player(pk)
+
     def close(self) -> None:
         """Безопасное освобождение дескрипторов C++ RocksDB."""
         if hasattr(self, "db") and self.db is not None:
@@ -185,6 +207,12 @@ class DagStore:
 
         elif node.node_type == DagNodeType.PLAYER:
             player = Player(**node.payload)
+            # Обеспечиваем строго уникальное вольное имя игрока
+            existing = self.get_player_by_username(player.username)
+            if existing and existing.pubkey != player.pubkey:
+                raise ValueError(
+                    f"К сожалению, имя «{player.username}» уже занято в Игре. Пожалуйста, подберите себе другое вольное имя."
+                )
             p_key = player.pubkey.encode("utf-8")
             batch.put(p_key, ormsgpack.packb(player.model_dump()), self._h_players)
 
@@ -336,8 +364,29 @@ class DagStore:
         return players
 
     def save_player(self, player: Player) -> None:
+        existing = self.get_player_by_username(player.username)
+        if existing and existing.pubkey != player.pubkey:
+            raise ValueError(
+                f"К сожалению, имя «{player.username}» уже занято в Игре. Пожалуйста, подберите себе другое вольное имя."
+            )
         p_key = player.pubkey.encode("utf-8")
         self._cf_players[p_key] = ormsgpack.packb(player.model_dump())
+
+    def delete_player(self, pubkey: str) -> bool:
+        """Удаление игрока из индекса (например, при очистке дубликатов)."""
+        p_key = pubkey.encode("utf-8")
+        if p_key in self._cf_players:
+            del self._cf_players[p_key]
+            return True
+        return False
+
+    def get_player_by_username(self, username: str) -> Optional[Player]:
+        """Поиск игрока по вольному имени (без учёта регистра)."""
+        target = username.strip().lower()
+        for p in self.get_all_players():
+            if p.username.strip().lower() == target:
+                return p
+        return None
 
     def get_player_by_name_or_pubkey(self, name_or_pubkey: str) -> Optional[Player]:
         """Поиск игрока по публичному ключу или вольному имени (без учёта регистра)."""
