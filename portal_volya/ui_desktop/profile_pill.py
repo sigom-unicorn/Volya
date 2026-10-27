@@ -1,22 +1,26 @@
 """
-Виджет профиля вольного игрока (GlassPlayerPill) и карточка Души (PlayerProfileModal).
+Виджет парящего аватара вольного игрока (CornerAvatarWidget) и карточка Души (PlayerProfileModal).
 Плавный Glassmorphism, управление аватаром, ПИН-кодом и сменой игрока.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QRegularExpression, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QRegularExpression, QSize, Qt, Signal
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QFont,
     QGuiApplication,
     QImage,
     QPainter,
     QPainterPath,
+    QPen,
     QPixmap,
+    QRadialGradient,
     QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
@@ -37,7 +41,6 @@ from portal_volya.node import VolyaNode
 from portal_volya.ui_desktop.auth_dialogs import (
     GLASS_DIALOG_STYLE,
     PinCodeModal,
-    PlayerSelectionModal,
     make_circular_pixmap,
 )
 from portal_volya.ui_desktop.avatar_generator import (
@@ -438,115 +441,81 @@ class PlayerProfileModal(QDialog):
         self.done(2) # Специальный код для смены игрока
 
 
-class GlassPlayerPill(QFrame):
+class CornerAvatarWidget(QWidget):
     """
-    Парящий полупрозрачный профильный бейдж в верхнем левом углу Living Window.
-    Отображает: круговой аватар из RocksDB, имя игрока, капли совести 💧 и роль 🌿.
+    Парящий круглый аватар вольного игрока в левом верхнем углу экрана.
+    Без плашек, надписей и рамок.
+    Имеет деликатное свечение, расходящееся градиентом от внешнего контура:
+    - Днем — золотистый ореол (#facc15 / #d4af37)
+    - Вечером и ночью — лунный свет (#f1f5f9 / #ffffff)
+    Клик открывает карточку Души (PlayerProfileModal).
     """
 
-    player_changed = Signal(str) # pubkey
+    player_changed = Signal(str)
+    switch_requested = Signal()
 
-    def __init__(self, node: VolyaNode, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        node: VolyaNode,
+        parent: Optional[QWidget] = None,
+        avatar_size: int = 96,
+        glow_spread: float = 10.0,
+        size: Optional[int] = None,
+    ) -> None:
         super().__init__(parent)
         self.node = node
+        if size is not None:
+            avatar_size = size
+        self.avatar_size = avatar_size
+        self.glow_spread = glow_spread
+        self.total_size = int(avatar_size + 2 * glow_spread)
+        self._pixmap: Optional[QPixmap] = None
+        self._hovered = False
 
-        self.setObjectName("glassPlayerPill")
-        self.setStyleSheet("""
-            #glassPlayerPill {
-                background: rgba(14, 20, 36, 0.75);
-                border: 1px solid rgba(212, 175, 55, 0.35);
-                border-radius: 24px;
-            }
-            #glassPlayerPill:hover {
-                background: rgba(18, 26, 48, 0.88);
-                border-color: rgba(212, 175, 55, 0.65);
-            }
-            QLabel {
-                color: #e2e8f0;
-                font-family: 'Segoe UI', 'Roboto', sans-serif;
-            }
-            QPushButton#switchBtn {
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.18);
-                border-radius: 12px;
-                color: #f1f5f9;
-                font-size: 11.5px;
-                padding: 4px 10px;
-                font-weight: 500;
-            }
-            QPushButton#switchBtn:hover {
-                background: rgba(212, 175, 55, 0.25);
-                border-color: #d4af37;
-            }
-        """)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 5, 12, 5)
-        layout.setSpacing(10)
-
-        # 1. Круглый аватар
-        self.lbl_avatar = QLabel()
-        self.lbl_avatar.setFixedSize(38, 38)
-        self.lbl_avatar.setCursor(Qt.PointingHandCursor)
-        self.lbl_avatar.mousePressEvent = lambda e: self.open_profile()
-        layout.addWidget(self.lbl_avatar)
-
-        # 2. Информационный блок: Имя и статус
-        info_widget = QWidget()
-        info_widget.setCursor(Qt.PointingHandCursor)
-        info_widget.mousePressEvent = lambda e: self.open_profile()
-        info_layout = QVBoxLayout(info_widget)
-        info_layout.setContentsMargins(0, 0, 0, 0)
-        info_layout.setSpacing(2)
-
-        self.lbl_name = QLabel()
-        self.lbl_name.setFont(QFont("Segoe UI", 12, QFont.Bold))
-        self.lbl_name.setStyleSheet("color: #f8fafc;")
-        info_layout.addWidget(self.lbl_name)
-
-        self.lbl_status = QLabel()
-        self.lbl_status.setFont(QFont("Segoe UI", 10.5))
-        self.lbl_status.setStyleSheet("color: #67e8f9;")
-        info_layout.addWidget(self.lbl_status)
-
-        layout.addWidget(info_widget)
-
-        # 3. Кнопка смены игрока
-        self.btn_switch = QPushButton("👤 Сменить")
-        self.btn_switch.setObjectName("switchBtn")
-        self.btn_switch.setCursor(Qt.PointingHandCursor)
-        self.btn_switch.clicked.connect(self.open_player_selection)
-        layout.addWidget(self.btn_switch)
-
+        self.setFixedSize(self.total_size, self.total_size)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
         self.refresh()
 
+    def is_night(self) -> bool:
+        p = self.window()
+        if p and hasattr(p, "is_night"):
+            return p.is_night()
+        parent = self.parent()
+        if parent and hasattr(parent, "is_night"):
+            return parent.is_night()
+        now = datetime.now()
+        h = now.hour + now.minute / 60.0
+        return not (7.0 <= h < 18.8)
+
     def refresh(self) -> None:
-        """Перезагрузка данных текущего игрока."""
+        """Перезагрузка аватарки активного игрока."""
         pk = self.node.identity.pubkey
-        player = self.node.dag_store.get_player(pk)
         dev_id = self.node.identities_mgr.get_player(pk)
-
-        # Имя
         name = dev_id.username if dev_id else self.node.identity.username
-        self.lbl_name.setText(name)
-
-        # Капли и роль
-        drops = player.conscience_drops if player else 0
-        role_title = "Вольный игрок"
-        if player and player.roles:
-            role_title = player.roles[-1].role_title
-
-        role_icon = "🌿" if role_title == "Неофит" else "🌳"
-        self.lbl_status.setText(f"💧 {drops}  •  {role_icon} {role_title}")
-
-        # Аватар
         avatar_bytes = self.node.get_player_avatar_bytes(pk)
         if not avatar_bytes:
-            avatar_bytes = generate_default_avatar_png(name, pk)
-        pix = make_circular_pixmap(avatar_bytes, size=38)
-        self.lbl_avatar.setPixmap(pix)
+            avatar_bytes = generate_default_avatar_png(name, pk, size=256)
 
-        self.adjustSize()
+        # Сохраняем исходный pixmap высокого разрешения (256x256),
+        # чтобы отображение оставалось кристально чётким
+        self._pixmap = make_circular_pixmap(avatar_bytes, size=256)
+        self.update()
+
+    def enterEvent(self, event) -> None:
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.open_profile()
+        super().mousePressEvent(event)
 
     def open_profile(self) -> None:
         """Открытие карточки Души игрока."""
@@ -554,15 +523,77 @@ class GlassPlayerPill(QFrame):
         modal.profile_updated.connect(self.refresh)
         res = modal.exec()
         self.refresh()
-        if res == 2: # Пользователь нажал "Сменить игрока" внутри профиля
-            self.open_player_selection()
+        if res == 2:
+            self.switch_requested.emit()
 
-    def open_player_selection(self) -> None:
-        """Открытие Врат Воли для выбора или добавления игрока."""
-        modal = PlayerSelectionModal(self.node, parent=self.window())
-        modal.player_selected.connect(self._on_player_switched)
-        modal.exec()
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-    def _on_player_switched(self, new_pubkey: str) -> None:
-        self.refresh()
-        self.player_changed.emit(new_pubkey)
+        w = float(self.width())
+        h = float(self.height())
+        cx = w / 2.0
+        cy = h / 2.0
+        center = QPointF(cx, cy)
+
+        # Радиус свечения и аватарки
+        # Аватарка сохраняет первозданный размер (r_avatar = avatar_size / 2)
+        r_outer = min(cx, cy) - 0.5
+        r_avatar = max(2.0, min(self.avatar_size / 2.0, r_outer - self.glow_spread))
+
+        if r_avatar <= 2.0:
+            return
+
+        night = self.is_night()
+        if night:
+            # Лунный свет вечером и ночью: серебристо-лунное сияние
+            peak_alpha = 150 if not self._hovered else 200
+            rim_alpha = 220 if not self._hovered else 255
+            glow_rgb = QColor(241, 245, 249)
+            rim_color = QColor(248, 250, 252, rim_alpha)
+        else:
+            # Золотистый свет днем: теплое солнечное сияние
+            peak_alpha = 160 if not self._hovered else 210
+            rim_alpha = 230 if not self._hovered else 255
+            glow_rgb = QColor(250, 204, 21)
+            rim_color = QColor(212, 175, 55, rim_alpha)
+
+        # 1. Радиальный градиент свечения, расходящийся от контура аватарки наружу
+        r_ratio = r_avatar / r_outer
+        span = 1.0 - r_ratio
+        grad = QRadialGradient(center, r_outer)
+
+        # Внутри аватарки градиент прозрачен
+        grad.setColorAt(0.0, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), 0))
+        grad.setColorAt(max(0.0, r_ratio * 0.95), QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), 0))
+        # Пик свечения прямо на внешнем контуре аватарки
+        grad.setColorAt(r_ratio, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), peak_alpha))
+        # Плавное нелинейное затухание в прозрачность
+        grad.setColorAt(r_ratio + span * 0.28, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), int(peak_alpha * 0.55)))
+        grad.setColorAt(r_ratio + span * 0.62, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), int(peak_alpha * 0.20)))
+        grad.setColorAt(r_ratio + span * 0.88, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), int(peak_alpha * 0.05)))
+        grad.setColorAt(1.0, QColor(glow_rgb.red(), glow_rgb.green(), glow_rgb.blue(), 0))
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(grad))
+        painter.drawEllipse(center, r_outer, r_outer)
+
+        # 2. Отрисовка круглого аватара
+        if self._pixmap and not self._pixmap.isNull():
+            clip_path = QPainterPath()
+            clip_path.addEllipse(center, r_avatar, r_avatar)
+            painter.save()
+            painter.setClipPath(clip_path)
+            target_rect = QRectF(cx - r_avatar, cy - r_avatar, r_avatar * 2.0, r_avatar * 2.0)
+            painter.drawPixmap(target_rect.toRect(), self._pixmap)
+            painter.restore()
+
+        # 3. Тонкий контурный ободок
+        rim_pen = QPen(rim_color, 1.4)
+        painter.setPen(rim_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(center, r_avatar, r_avatar)
+
+        painter.end()
+

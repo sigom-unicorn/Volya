@@ -6,9 +6,20 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRectF, QSize, QTimer, Qt
+from PySide6.QtCore import (
+    QEasingCurve,
+    QParallelAnimationGroup,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QSize,
+    QTimer,
+    Qt,
+)
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -24,6 +35,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -34,8 +46,8 @@ from PySide6.QtWidgets import (
 )
 
 from portal_volya.node import VolyaNode
-from portal_volya.ui_desktop.auth_dialogs import PinCodeModal, PlayerSelectionModal
-from portal_volya.ui_desktop.profile_pill import GlassPlayerPill
+from portal_volya.ui_desktop.auth_dialogs import PinCodeModal
+from portal_volya.ui_desktop.profile_pill import CornerAvatarWidget
 from portal_volya.ui_desktop.sacred_auth import SacredPinLockWidget
 from portal_volya.ui_desktop.world.living_canvas import LivingWorldCanvas
 
@@ -75,6 +87,9 @@ class LivingWorldWidget(QOpenGLWidget):
 
         self.canvas.update()
         self.update()
+        p = self.window()
+        if p and hasattr(p, "corner_avatar") and p.corner_avatar and p.corner_avatar.isVisible():
+            p.corner_avatar.update()
 
     def paintGL(self) -> None:
         painter = QPainter(self)
@@ -281,17 +296,23 @@ class VolyaLivingWindow(QMainWindow):
         self.world_widget = LivingWorldWidget(self)
         self.setCentralWidget(self.world_widget)
 
-        # Парящий профиль игрока в верхнем левом углу (Аватар, Капли, Роль, Смена)
-        self.player_pill = GlassPlayerPill(self.node, self)
-        self.player_pill.adjustSize()
-        if not self.is_authenticated:
-            self.player_pill.setVisible(False)
+        # Парящий аватар игрока в левом верхнем углу (чистый, без надписей)
+        self.corner_avatar = CornerAvatarWidget(self.node, self, avatar_size=96, glow_spread=10.0)
+        self.corner_avatar.move(self._corner_avatar_pos())
+        self.corner_avatar.player_changed.connect(self._on_avatar_player_switched)
+        self.corner_avatar.switch_requested.connect(self._on_switch_player_requested)
 
-        # Парящая панель управления внизу (Время суток, Светила, Цикл)
+        if not self.is_authenticated:
+            self.corner_avatar.setVisible(False)
+        else:
+            self.corner_avatar.setVisible(True)
+
+        # Панель управления внизу (скрыта по умолчанию, открывается по 'H')
         self.control_pill = GlassControlPill(self.world_widget, self)
         self.control_pill.adjustSize()
+        self.control_pill.setVisible(False)
 
-        # Подсказка горячих клавиш
+        # Подсказка горячих клавиш (скрыта)
         self.lbl_hint = QLabel("Нажми H — скрыть/показать управление | F11 — во весь экран", self)
         self.lbl_hint.setStyleSheet("""
             color: rgba(255, 255, 255, 0.45);
@@ -300,6 +321,7 @@ class VolyaLivingWindow(QMainWindow):
             background: transparent;
         """)
         self.lbl_hint.adjustSize()
+        self.lbl_hint.setVisible(False)
 
         # Эфирный замок авторизации (прямо поверх полотна, без рамок и панелей)
         self.sacred_lock = SacredPinLockWidget(self.node, active_dev, self)
@@ -307,35 +329,152 @@ class VolyaLivingWindow(QMainWindow):
         self.sacred_lock.switch_player_requested.connect(self._on_sacred_switch_player)
         self.sacred_lock.setVisible(not self.is_authenticated)
 
+    def is_night(self) -> bool:
+        """Определяет, день сейчас или вечер/ночь (по небесному полотну мира или системному времени)."""
+        if hasattr(self, "world_widget") and self.world_widget:
+            canvas = getattr(self.world_widget, "canvas", None)
+            if canvas and hasattr(canvas, "celestial") and canvas.celestial:
+                cel = canvas.celestial
+                if hasattr(cel, "get_night_factor"):
+                    return cel.get_night_factor() >= 0.35
+                if hasattr(cel, "current_hour"):
+                    h = cel.current_hour
+                    return not (7.0 <= h < 18.8)
+        now = datetime.now()
+        h = now.hour + now.minute / 60.0
+        return not (7.0 <= h < 18.8)
+
+    def _corner_avatar_pos(self) -> QPoint:
+        glow_sp = int(getattr(self.corner_avatar, "glow_spread", 10.0))
+        return QPoint(24 - glow_sp, 24 - glow_sp)
+
     def _on_sacred_authenticated(self) -> None:
-        """Успешный ввод ПИН-кода в эфирном замке."""
+        """Успешный ввод ПИН-кода в эфирном замке: аватарка плавно перелетает в левый верхний угол без уменьшения."""
         self.is_authenticated = True
-        self.sacred_lock.setVisible(False)
-        self.player_pill.refresh()
-        self.player_pill.setVisible(True)
+
+        target_pos = self._corner_avatar_pos()
+        tot_size = self.corner_avatar.total_size
+
+        # Если окно не на экране или анимации отключены, переключаем мгновенно
+        if not self.isVisible() or getattr(self, "_skip_auth_animation", False):
+            self.sacred_lock.setVisible(False)
+            self.corner_avatar.refresh()
+            self.corner_avatar.setGeometry(QRect(target_pos.x(), target_pos.y(), tot_size, tot_size))
+            self.corner_avatar.setVisible(True)
+            self.corner_avatar.raise_()
+            return
+
+        # 1. Точный центр аватарки на замке
+        avatar_lbl = self.sacred_lock.lbl_avatar
+        center_pt = self.sacred_lock.mapTo(self, avatar_lbl.geometry().center())
+        start_rect = QRect(
+            center_pt.x() - tot_size // 2,
+            center_pt.y() - tot_size // 2,
+            tot_size,
+            tot_size,
+        )
+
+        # 2. Финальная позиция в левом верхнем углу (размер полностью сохраняется!)
+        target_rect = QRect(target_pos.x(), target_pos.y(), tot_size, tot_size)
+
+        # Скрываем аватарку на замке, чтобы не двоилась в полёте
+        avatar_lbl.setVisible(False)
+        self.sacred_lock.setEnabled(False)
+
+        # Подготавливаем парящий corner_avatar в точке старта
+        self.corner_avatar.refresh()
+        self.corner_avatar.setGeometry(start_rect)
+        self.corner_avatar.setVisible(True)
+        self.corner_avatar.raise_()
+
+        self._in_auth_transition = True
+
+        # Плавное угасание элементов замка (кнопки, поле ПИНа, дуга)
+        opacity_effect = QGraphicsOpacityEffect(self.sacred_lock)
+        self.sacred_lock.setGraphicsEffect(opacity_effect)
+        fade_anim = QPropertyAnimation(opacity_effect, b"opacity", self)
+        fade_anim.setDuration(350)
+        fade_anim.setStartValue(1.0)
+        fade_anim.setEndValue(0.0)
+
+        # Плавный перелёт аватарки в угол без изменения размера
+        glide_anim = QPropertyAnimation(self.corner_avatar, b"geometry", self)
+        glide_anim.setDuration(650)
+        glide_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        glide_anim.setStartValue(start_rect)
+        glide_anim.setEndValue(target_rect)
+
+        self._auth_anim_group = QParallelAnimationGroup(self)
+        self._auth_anim_group.addAnimation(fade_anim)
+        self._auth_anim_group.addAnimation(glide_anim)
+
+        def _finish_transition() -> None:
+            self._in_auth_transition = False
+            self.sacred_lock.setVisible(False)
+            self.sacred_lock.setEnabled(True)
+            self.sacred_lock.setGraphicsEffect(None)
+            avatar_lbl.setVisible(True)
+            self.corner_avatar.setGeometry(target_rect)
+
+        self._auth_anim_group.finished.connect(_finish_transition)
+        self._auth_anim_group.start()
+
+    def finish_auth_animation(self) -> None:
+        """Мгновенно завершает анимацию перетекания (для тестов или пропуска)."""
+        if hasattr(self, "_auth_anim_group") and self._auth_anim_group:
+            if self._auth_anim_group.state() == QParallelAnimationGroup.Running:
+                self._auth_anim_group.stop()
+                self._in_auth_transition = False
+                self.sacred_lock.setVisible(False)
+                self.sacred_lock.setEnabled(True)
+                self.sacred_lock.setGraphicsEffect(None)
+                self.sacred_lock.lbl_avatar.setVisible(True)
+                target_pos = self._corner_avatar_pos()
+                tot_size = self.corner_avatar.total_size
+                self.corner_avatar.setGeometry(QRect(target_pos.x(), target_pos.y(), tot_size, tot_size))
 
     def _on_sacred_switch_player(self) -> None:
         """Запрос смены игрока из эфирного замка."""
-        sel_modal = PlayerSelectionModal(self.node, parent=self)
-        if sel_modal.exec() == QDialog.Accepted:
-            new_dev = self.node.identities_mgr.get_active_player()
-            if new_dev:
-                if new_dev.has_pin:
-                    self.is_authenticated = False
-                    self.sacred_lock.set_identity(new_dev)
-                    self.sacred_lock.setVisible(True)
-                    self.sacred_lock.pin_input.setFocus()
-                    self.player_pill.setVisible(False)
-                else:
-                    self.is_authenticated = True
-                    self.sacred_lock.setVisible(False)
-                    self.player_pill.refresh()
-                    self.player_pill.setVisible(True)
+        if hasattr(self.sacred_lock, "_toggle_switch_list"):
+            self.sacred_lock._toggle_switch_list()
+
+    def _on_switch_player_requested(self) -> None:
+        """Пользователь нажал 'Сменить игрока' в карточке Души."""
+        self.is_authenticated = False
+        self.corner_avatar.setVisible(False)
+        self.control_pill.setVisible(False)
+        self.lbl_hint.setVisible(False)
+
+        active_dev = self.node.identities_mgr.get_active_player()
+        if active_dev:
+            self.sacred_lock.set_identity(active_dev)
+        self.sacred_lock.setVisible(True)
+        if hasattr(self.sacred_lock, "_toggle_switch_list"):
+            if not getattr(self.sacred_lock, "_switch_list_visible", False):
+                self.sacred_lock._toggle_switch_list()
+
+    def _on_avatar_player_switched(self, new_pubkey: str) -> None:
+        """Смена игрока из модального окна профиля (клик по corner_avatar)."""
+        dev_id = self.node.identities_mgr.get_player(new_pubkey)
+        if dev_id and dev_id.has_pin:
+            self.is_authenticated = False
+            self.sacred_lock.set_identity(dev_id)
+            self.sacred_lock.setVisible(True)
+            self.sacred_lock.pin_input.setFocus()
+            self.corner_avatar.setVisible(False)
+        else:
+            self.is_authenticated = True
+            self.sacred_lock.setVisible(False)
+            self.corner_avatar.refresh()
+            self.corner_avatar.move(self._corner_avatar_pos())
+            self.corner_avatar.setVisible(True)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        # Профиль игрока в верхнем левом углу
-        self.player_pill.move(24, 24)
+        # Аватар игрока в верхнем левом углу
+        if hasattr(self, "corner_avatar") and self.corner_avatar:
+            if not getattr(self, "_in_auth_transition", False):
+                self.corner_avatar.move(self._corner_avatar_pos())
 
         # Центрируем панель управления внизу экрана
         pill_w = self.control_pill.width()
@@ -366,11 +505,9 @@ class VolyaLivingWindow(QMainWindow):
             else:
                 self.showFullScreen()
         elif event.key() == Qt.Key_H:
-            # Переключение видимости панелей
+            # Переключение видимости панели управления
             is_vis = not self.control_pill.isVisible()
             self.control_pill.setVisible(is_vis)
-            if self.is_authenticated:
-                self.player_pill.setVisible(is_vis)
             self.lbl_hint.setVisible(is_vis)
         else:
             super().keyPressEvent(event)

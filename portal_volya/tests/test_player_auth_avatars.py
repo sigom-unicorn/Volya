@@ -145,17 +145,16 @@ def test_player_pin_management(temp_node_dir):
         assert dev_id.has_pin is False
 
 
-def test_glass_player_pill_and_profile_modal(temp_node_dir, qapp):
-    """Проверка работы виджета GlassPlayerPill и карточки профиля."""
-    from portal_volya.ui_desktop.profile_pill import GlassPlayerPill, PlayerProfileModal
+def test_corner_avatar_and_profile_modal(temp_node_dir, qapp):
+    """Проверка работы виджета CornerAvatarWidget и карточки профиля."""
+    from portal_volya.ui_desktop.profile_pill import CornerAvatarWidget, PlayerProfileModal
     from portal_volya.ui_desktop.main_window import VolyaLivingWindow
 
     with VolyaNode(node_dir=temp_node_dir) as node:
-        # Создаем pill
-        pill = GlassPlayerPill(node)
-        assert pill.lbl_name.text() == "Сигом"
-        assert "💧" in pill.lbl_status.text()
-        assert pill.lbl_avatar.pixmap() is not None
+        # Создаем corner avatar
+        corner = CornerAvatarWidget(node, size=56)
+        assert corner._pixmap is not None
+        assert corner._pixmap.width() > 0
 
         # Проверяем модалку профиля
         modal = PlayerProfileModal(node)
@@ -165,15 +164,15 @@ def test_glass_player_pill_and_profile_modal(temp_node_dir, qapp):
 
         # Создаем Неофита и переключаемся
         node.create_neophyte_player("Яромир", bio="Искатель истины")
-        pill.refresh()
-        assert pill.lbl_name.text() == "Яромир"
-        assert "💧 0" in pill.lbl_status.text()
-        assert "Неофит" in pill.lbl_status.text()
+        corner.refresh()
+        assert corner._pixmap is not None
 
         # Проверяем окно LivingWindow
         window = VolyaLivingWindow(node=node)
-        assert window.player_pill is not None
-        assert window.player_pill.lbl_name.text() == "Яромир"
+        window.show()
+        qapp.processEvents()
+        assert window.corner_avatar is not None
+        assert window.corner_avatar.isVisible() is True
         window.close()
         qapp.processEvents()
 
@@ -194,7 +193,7 @@ def test_startup_pin_auth_flow(temp_node_dir, qapp):
         qapp.processEvents()
 
         assert window.is_authenticated is False
-        assert window.player_pill.isVisible() is False
+        assert window.corner_avatar.isVisible() is False
         assert window.sacred_lock.isVisible() is True
 
         # Проверяем имя сверху аватарки
@@ -205,11 +204,15 @@ def test_startup_pin_auth_flow(temp_node_dir, qapp):
         assert "Осталось попыток: 2" in window.sacred_lock.lbl_status.text()
         assert window.is_authenticated is False
 
-        # Верный ПИН — эфирный замок открывается
+        # Верный ПИН — эфирный замок открывается и запускается перетекание аватарки в угол
         window.sacred_lock.pin_input.setText("7788")
+        if hasattr(window, "finish_auth_animation"):
+            window.finish_auth_animation()
+        qapp.processEvents()
+
         assert window.is_authenticated is True
         assert window.sacred_lock.isVisible() is False
-        assert window.player_pill.isVisible() is True
+        assert window.corner_avatar.isVisible() is True
 
         window.close()
         qapp.processEvents()
