@@ -453,6 +453,7 @@ class CornerAvatarWidget(QWidget):
 
     player_changed = Signal(str)
     switch_requested = Signal()
+    hover_changed = Signal(bool)
 
     def __init__(
         self,
@@ -504,11 +505,13 @@ class CornerAvatarWidget(QWidget):
 
     def enterEvent(self, event) -> None:
         self._hovered = True
+        self.hover_changed.emit(True)
         self.update()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._hovered = False
+        self.hover_changed.emit(False)
         self.update()
         super().leaveEvent(event)
 

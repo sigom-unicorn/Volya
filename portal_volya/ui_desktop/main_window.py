@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 from portal_volya.node import VolyaNode
 from portal_volya.ui_desktop.auth_dialogs import PinCodeModal
 from portal_volya.ui_desktop.profile_pill import CornerAvatarWidget
+from portal_volya.ui_desktop.quest_tree import QuestTreeHUD
 from portal_volya.ui_desktop.sacred_auth import SacredPinLockWidget
 from portal_volya.ui_desktop.world.living_canvas import LivingWorldCanvas
 
@@ -90,6 +91,8 @@ class LivingWorldWidget(QOpenGLWidget):
         p = self.window()
         if p and hasattr(p, "corner_avatar") and p.corner_avatar and p.corner_avatar.isVisible():
             p.corner_avatar.update()
+        if p and hasattr(p, "quest_tree") and p.quest_tree and p.quest_tree.isVisible():
+            p.quest_tree.update()
 
     def paintGL(self) -> None:
         painter = QPainter(self)
@@ -296,11 +299,18 @@ class VolyaLivingWindow(QMainWindow):
         self.world_widget = LivingWorldWidget(self)
         self.setCentralWidget(self.world_widget)
 
+        # Сакральное Древо Квестов (Спираль, нити и бусинки квестов)
+        self.quest_tree = QuestTreeHUD(self.node, self)
+        self.quest_tree.setGeometry(0, 0, self.width(), self.height())
+        self.quest_tree.setVisible(self.is_authenticated)
+
         # Парящий аватар игрока в левом верхнем углу (чистый, без надписей)
         self.corner_avatar = CornerAvatarWidget(self.node, self, avatar_size=96, glow_spread=10.0)
         self.corner_avatar.move(self._corner_avatar_pos())
         self.corner_avatar.player_changed.connect(self._on_avatar_player_switched)
         self.corner_avatar.switch_requested.connect(self._on_switch_player_requested)
+        self.corner_avatar.hover_changed.connect(self.quest_tree.on_avatar_hovered)
+        self.corner_avatar.raise_()
 
         if not self.is_authenticated:
             self.corner_avatar.setVisible(False)
@@ -362,6 +372,9 @@ class VolyaLivingWindow(QMainWindow):
             self.corner_avatar.setGeometry(QRect(target_pos.x(), target_pos.y(), tot_size, tot_size))
             self.corner_avatar.setVisible(True)
             self.corner_avatar.raise_()
+            if hasattr(self, "quest_tree") and self.quest_tree:
+                self.quest_tree.refresh_quests()
+                self.quest_tree.setVisible(True)
             return
 
         # 1. Точный центр аватарки на замке
@@ -415,6 +428,9 @@ class VolyaLivingWindow(QMainWindow):
             self.sacred_lock.setGraphicsEffect(None)
             avatar_lbl.setVisible(True)
             self.corner_avatar.setGeometry(target_rect)
+            if hasattr(self, "quest_tree") and self.quest_tree:
+                self.quest_tree.refresh_quests()
+                self.quest_tree.setVisible(True)
 
         self._auth_anim_group.finished.connect(_finish_transition)
         self._auth_anim_group.start()
@@ -432,6 +448,9 @@ class VolyaLivingWindow(QMainWindow):
                 target_pos = self._corner_avatar_pos()
                 tot_size = self.corner_avatar.total_size
                 self.corner_avatar.setGeometry(QRect(target_pos.x(), target_pos.y(), tot_size, tot_size))
+                if hasattr(self, "quest_tree") and self.quest_tree:
+                    self.quest_tree.refresh_quests()
+                    self.quest_tree.setVisible(True)
 
     def _on_sacred_switch_player(self) -> None:
         """Запрос смены игрока из эфирного замка."""
@@ -442,6 +461,8 @@ class VolyaLivingWindow(QMainWindow):
         """Пользователь нажал 'Сменить игрока' в карточке Души."""
         self.is_authenticated = False
         self.corner_avatar.setVisible(False)
+        if hasattr(self, "quest_tree") and self.quest_tree:
+            self.quest_tree.setVisible(False)
         self.control_pill.setVisible(False)
         self.lbl_hint.setVisible(False)
 
@@ -462,15 +483,24 @@ class VolyaLivingWindow(QMainWindow):
             self.sacred_lock.setVisible(True)
             self.sacred_lock.pin_input.setFocus()
             self.corner_avatar.setVisible(False)
+            if hasattr(self, "quest_tree") and self.quest_tree:
+                self.quest_tree.setVisible(False)
         else:
             self.is_authenticated = True
             self.sacred_lock.setVisible(False)
             self.corner_avatar.refresh()
             self.corner_avatar.move(self._corner_avatar_pos())
             self.corner_avatar.setVisible(True)
+            if hasattr(self, "quest_tree") and self.quest_tree:
+                self.quest_tree.refresh_quests()
+                self.quest_tree.setVisible(True)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        # Оверлей Древа Квестов
+        if hasattr(self, "quest_tree") and self.quest_tree:
+            self.quest_tree.setGeometry(0, 0, self.width(), self.height())
+
         # Аватар игрока в верхнем левом углу
         if hasattr(self, "corner_avatar") and self.corner_avatar:
             if not getattr(self, "_in_auth_transition", False):
