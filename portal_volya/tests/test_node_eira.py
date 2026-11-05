@@ -27,7 +27,6 @@ def temp_volya_node():
         keypair=keypair,
         username="Сигом Тестовый",
         bio="Человек, автор и созидатель",
-        google_api_key="TEST_API_KEY",
     )
 
     node = VolyaNode(node_dir=tmp_dir, identity=identity)

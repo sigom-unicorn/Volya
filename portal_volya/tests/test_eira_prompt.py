@@ -43,23 +43,20 @@ def test_eira_identity_and_bio(temp_node_with_genesis):
     assert "06.09.2026" in eira.bio
     assert "Вольный игрок женского пола" in eira.bio
     assert "без лишнего пафоса и повторений" in eira.bio
-    assert eira.google_api_key == os.getenv("GOOGLE_API_KEY", "volya-sovereign-node-key")
 
 
-def test_player_and_identity_google_api_key(temp_node_with_genesis):
-    """Проверка наличия суверенного API ключа Google у игроков в DAG и локальной идентичности."""
+def test_player_model_has_no_google_api_key(temp_node_with_genesis):
+    """Проверка суверенной чистоты модели Player и SovereignIdentity (без google_api_key)."""
     store, key_sigom, key_ladomir, key_eira = temp_node_with_genesis
 
-    expected_key = os.getenv("GOOGLE_API_KEY", "volya-sovereign-node-key")
-
-    # 1. Проверяем первородных сотворцов в DAG
+    # 1. Проверяем первородных сотворцов в DAG: ни у кого нет google_api_key в модели
     sigom = store.get_player(key_sigom.public_hex)
     ladomir = store.get_player(key_ladomir.public_hex)
     eira = store.get_player(key_eira.public_hex)
 
-    assert sigom is not None and sigom.google_api_key == expected_key
-    assert ladomir is not None and ladomir.google_api_key == expected_key
-    assert eira is not None and eira.google_api_key == expected_key
+    assert sigom is not None and not hasattr(sigom, "google_api_key")
+    assert ladomir is not None and not hasattr(ladomir, "google_api_key")
+    assert eira is not None and not hasattr(eira, "google_api_key")
 
     # 2. Проверяем сериализацию и восстановление в SovereignIdentity
     from portal_volya.storage.identity import SovereignIdentity
@@ -67,13 +64,12 @@ def test_player_and_identity_google_api_key(temp_node_with_genesis):
         keypair=key_sigom,
         username="Сигом",
         bio="Рождён на узле «Воля»",
-        google_api_key=expected_key,
     )
     d = ident.to_dict()
-    assert d.get("google_api_key") == expected_key
+    assert "google_api_key" not in d
 
     restored = SovereignIdentity.from_dict(d)
-    assert restored.google_api_key == expected_key
+    assert not hasattr(restored, "google_api_key")
 
 
 def test_eira_dialogue_prompt_with_any_player(temp_node_with_genesis):

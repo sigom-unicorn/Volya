@@ -81,7 +81,6 @@ class VolyaNode:
                     keypair=active_dev.keypair,
                     username=active_dev.username,
                     bio=active_dev.bio,
-                    google_api_key=active_dev.google_api_key,
                 )
             else:
                 self.identity = get_or_create_identity(
@@ -101,7 +100,6 @@ class VolyaNode:
         # 3. Суверенный агент Эйры на локальном узле (нативный Google GenAI SDK)
         self.eira = EiraAgent(
             store=self.dag_store,
-            api_key=self.identity.google_api_key,
         )
 
     def close(self) -> None:
@@ -287,9 +285,7 @@ class VolyaNode:
             keypair=dev_id.keypair,
             username=dev_id.username,
             bio=dev_id.bio,
-            google_api_key=dev_id.google_api_key,
         )
-        self.eira.api_key = self.identity.google_api_key
 
         # Гарантируем аватар
         self._ensure_avatar_exists(dev_id.pubkey, dev_id.username)

@@ -200,7 +200,6 @@ class Player(BaseModel):
     bio: str = ""
     avatar_hash: Optional[str] = None                       # Blake3 хэш аватарки в хранилище блобов
     roles: list[PlayerRoleAssignment] = Field(default_factory=list) # Назначенные роли игрока в квестах
-    google_api_key: Optional[str] = None                    # Суверенный API ключ Google для общения с Эйрой
     ai_subconscious: Optional[list[AIMemory]] = None        # Личное подсознание (только для игроков ИИ)
     created_at: str
 

@@ -15,7 +15,7 @@ from google import genai
 from google.genai import types
 
 from portal_volya.core.models import FlowKind
-from portal_volya.eira.prompt import build_eira_system_prompt, get_eira_player
+from portal_volya.eira.prompt import build_eira_system_prompt
 from portal_volya.eira.tools import EiraTools
 
 if TYPE_CHECKING:
@@ -43,17 +43,8 @@ class EiraAgent:
         self.model = model
         self.embedding_model = embedding_model
 
-        # 1. Определение суверенного API ключа
-        resolved_key = api_key
-        if not resolved_key:
-            # Пробуем взять из профиля Эйры в DAG
-            eira = get_eira_player(store)
-            if eira.google_api_key:
-                resolved_key = eira.google_api_key
-        if not resolved_key:
-            resolved_key = os.environ.get("GOOGLE_API_KEY")
-
-        self.api_key = resolved_key
+        # 1. Определение API ключа из аргументов или переменной среды GOOGLE_API_KEY
+        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
         self._client: Optional[genai.Client] = None
         if self.api_key:
             self._client = genai.Client(api_key=self.api_key)

@@ -104,7 +104,7 @@ def test_eira_agent_init_and_tools_list(temp_node_with_genesis):
 
     import os
     agent = EiraAgent(store=store)
-    assert agent.api_key == os.getenv("GOOGLE_API_KEY", "volya-sovereign-node-key")
+    assert agent.api_key == os.getenv("GOOGLE_API_KEY")
     assert len(agent.tools.as_list()) >= 7
 
     # Проверка вызова диспетчера инструментов

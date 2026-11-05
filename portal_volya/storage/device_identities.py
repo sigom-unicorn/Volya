@@ -43,7 +43,6 @@ class DevicePlayerIdentity:
         pin_hash: Optional[str] = None,
         pin_salt: Optional[str] = None,
         bio: str = "",
-        google_api_key: Optional[str] = None,
         failed_pin_attempts: int = 0,
         locked_until: Optional[str] = None,
         created_at: Optional[str] = None,
@@ -54,7 +53,6 @@ class DevicePlayerIdentity:
         self.pin_hash = pin_hash
         self.pin_salt = pin_salt
         self.bio = bio
-        self.google_api_key = google_api_key
         self.failed_pin_attempts = failed_pin_attempts
         self.locked_until = locked_until
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
@@ -139,7 +137,6 @@ class DevicePlayerIdentity:
             "pin_hash": self.pin_hash,
             "pin_salt": self.pin_salt,
             "bio": self.bio,
-            "google_api_key": self.google_api_key,
             "failed_pin_attempts": self.failed_pin_attempts,
             "locked_until": self.locked_until,
             "created_at": self.created_at,
@@ -155,7 +152,6 @@ class DevicePlayerIdentity:
             pin_hash=data.get("pin_hash"),
             pin_salt=data.get("pin_salt"),
             bio=data.get("bio", ""),
-            google_api_key=data.get("google_api_key"),
             failed_pin_attempts=data.get("failed_pin_attempts", 0),
             locked_until=data.get("locked_until"),
             created_at=data.get("created_at"),
@@ -207,7 +203,6 @@ class DeviceIdentitiesManager:
                             keypair=kp,
                             username=old_data.get("username", "Вольный Игрок"),
                             bio=old_data.get("bio", ""),
-                            google_api_key=old_data.get("google_api_key"),
                         )
                         self._identities[kp.public_hex] = dev_id
                         self._active_pubkey = kp.public_hex

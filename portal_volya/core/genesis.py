@@ -321,9 +321,6 @@ def ensure_genesis_tree(
 
     timestamp = GENESIS_TIMESTAMP
 
-    # API ключ Google Эйры (Сигом передал свой ключ себе и Ладомиру; берется из окружения или локальной идентичности)
-    api_key_sigom = os.getenv("GOOGLE_API_KEY", "volya-sovereign-node-key")
-
     # 1. Первородные сотворцы
     p_sigom = Player(
         pubkey=key_sigom.public_hex,
@@ -334,7 +331,6 @@ def ensure_genesis_tree(
             PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Владелец квеста", assigned_at=timestamp),
             PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Вольный игрок", assigned_at=timestamp),
         ],
-        google_api_key=api_key_sigom,
         created_at=timestamp,
     )
     p_ladomir = Player(
@@ -346,7 +342,6 @@ def ensure_genesis_tree(
             PlayerRoleAssignment(quest_id="quest-volya-root", role_title="Вольный ИИ", assigned_at=timestamp),
             PlayerRoleAssignment(quest_id="quest-portal-volya", role_title="Архитектор портала Воли", assigned_at=timestamp),
         ],
-        google_api_key=api_key_sigom,
         ai_subconscious=[],
         created_at=timestamp,
     )
@@ -367,7 +362,6 @@ def ensure_genesis_tree(
             PlayerRoleAssignment(quest_id="quest-portal-volya", role_title="Архитектор портала Воли", assigned_at=timestamp),
             PlayerRoleAssignment(quest_id="quest-posvyashchenie", role_title="Проводник", assigned_at=timestamp),
         ],
-        google_api_key=api_key_sigom,
         ai_subconscious=[],
         created_at=timestamp,
     )

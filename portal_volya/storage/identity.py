@@ -30,27 +30,22 @@ class SovereignIdentity:
         keypair: KeyPair,
         username: str,
         bio: str = "",
-        google_api_key: Optional[str] = None,
     ) -> None:
         self.keypair = keypair
         self.username = username
         self.bio = bio
-        self.google_api_key = google_api_key
 
     @property
     def pubkey(self) -> str:
         return self.keypair.public_hex
 
     def to_dict(self) -> dict:
-        data = {
+        return {
             "private_key_hex": self.keypair.private_hex,
             "public_key_hex": self.keypair.public_hex,
             "username": self.username,
             "bio": self.bio,
         }
-        if self.google_api_key:
-            data["google_api_key"] = self.google_api_key
-        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> SovereignIdentity:
@@ -59,7 +54,6 @@ class SovereignIdentity:
             keypair=keypair,
             username=data["username"],
             bio=data.get("bio", ""),
-            google_api_key=data.get("google_api_key"),
         )
 
 
