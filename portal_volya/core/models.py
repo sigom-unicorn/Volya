@@ -107,6 +107,7 @@ class Quest(BaseModel):
     created_at: str
     is_active: bool = True
     finished_at: Optional[str] = None
+    logo: Optional[str] = None      # Логотип квеста (хэш блоба в CAS или путь к файлу)
 
 
 # =====================================================================

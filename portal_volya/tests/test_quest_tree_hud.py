@@ -213,3 +213,58 @@ def test_quest_tooltip_and_constant_visibility(temp_node_dir, qapp):
         # Для квеста «Воля» подсказки нет вообще
         hud.set_active_quest("quest-volya-root")
         assert hud.active_quest_title == "Воля"
+
+
+def test_volya_logo_pixmap_and_rendering(temp_node_dir, qapp):
+    """Проверка загрузки канонического логотипа Вольного Древа и его использования для квеста «Воля»."""
+    with VolyaNode(node_dir=temp_node_dir) as node:
+        hud = QuestTreeHUD(node)
+
+        # 1. Проверяем получение логотипа Воли из модели квеста quest.logo
+        root_q = node.dag_store.get_quest("quest-volya-root")
+        assert root_q is not None
+        assert root_q.logo is not None
+        assert node.dag_store.get_blob(root_q.logo) is not None
+
+        pix = hud.get_volya_logo_pixmap(size=128)
+        assert pix is not None
+        assert not pix.isNull()
+        assert pix.width() == 128
+        assert pix.height() == 128
+
+        # 2. Проверяем привязку логотипа к новому квесту
+        test_logo_bytes = b"fake_png_or_jpg_data_for_test"
+        blob_hash = node.dag_store.put_blob(test_logo_bytes)
+        custom_quest = node.create_quest(
+            title="Тестовый Квест",
+            kon=Kon(essence="Тест"),
+            parent_quest_id="quest-volya-root",
+            tier=TreeTier.ROOT_CHILD,
+            created_at="2026-11-05T12:00:00Z",
+            quest_id="quest-test-logo",
+            logo=blob_hash,
+        )
+        assert custom_quest.logo == blob_hash
+        assert node.dag_store.get_quest_logo(custom_quest) == test_logo_bytes
+
+        # 2. При выборе квеста «Воля» активный пиксмап соответствует логотипу
+        hud.set_active_quest("quest-volya-root")
+        assert hud._active_quest_pixmap is not None
+        assert not hud._active_quest_pixmap.isNull()
+        assert hud._active_quest_pixmap.width() == 128
+
+        # 3. Проверяем отрисовку без ошибок при закрытом и открытом дереве
+        from PySide6.QtGui import QImage, QPainter
+        img = QImage(800, 600, QImage.Format_ARGB32_Premultiplied)
+        painter = QPainter(img)
+
+        # Спокойное состояние с выбранной «Волей»
+        hud.has_selected_quest = True
+        hud._tree_open = False
+        hud.paintEvent(None)
+
+        # Состояние открытого дерева
+        hud._tree_open = True
+        hud._unfold_progress = 1.0
+        hud.paintEvent(None)
+        painter.end()

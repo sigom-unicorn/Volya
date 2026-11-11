@@ -475,6 +475,7 @@ class VolyaNode:
         tier: TreeTier,
         created_at: str,
         quest_id: Optional[str] = None,
+        logo: Optional[str] = None,
     ) -> Quest:
         """Порождение новой ветви Древа (квеста)."""
         qid = quest_id or f"quest-{uuid.uuid4().hex[:12]}"
@@ -486,6 +487,7 @@ class VolyaNode:
             kon=kon,
             owner_pubkey=self.identity.pubkey,
             created_at=created_at,
+            logo=logo,
         )
         node_id = hash_canonical(quest.model_dump())
         sig = self.identity.keypair.sign(node_id.encode("utf-8"))
@@ -502,6 +504,10 @@ class VolyaNode:
         )
         self.dag_store.put_node(dag_node)
         return quest
+
+    def set_quest_logo(self, quest_id: str, logo_bytes: bytes) -> str:
+        """Сохранение и привязка логотипа квеста в CAS блобы и обновление модели Quest."""
+        return self.dag_store.set_quest_logo(quest_id, logo_bytes)
 
     def add_drop(
         self,

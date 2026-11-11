@@ -263,6 +263,39 @@ class DagStore:
                 children.append(q)
         return children
 
+    def save_quest(self, quest: Quest) -> None:
+        """Сохранение или обновление квеста в семействе quests."""
+        q_key = quest.id.encode("utf-8")
+        self._cf_quests[q_key] = ormsgpack.packb(quest.model_dump())
+
+    def set_quest_logo(self, quest_id: str, logo_bytes: bytes) -> str:
+        """Сохранение и привязка логотипа квеста в RocksDB (CAS блоб)."""
+        logo_hash = self.put_blob(logo_bytes)
+        quest = self.get_quest(quest_id)
+        if quest:
+            quest.logo = logo_hash
+            self.save_quest(quest)
+        return logo_hash
+
+    def get_quest_logo(self, quest_or_id: Quest | str) -> Optional[bytes]:
+        """Получение байтов логотипа квеста из CAS блобов (или по пути к файлу)."""
+        if isinstance(quest_or_id, str):
+            quest = self.get_quest(quest_or_id)
+        else:
+            quest = quest_or_id
+        if not quest or not quest.logo:
+            return None
+        blob = self.get_blob(quest.logo)
+        if blob:
+            return blob
+        p = Path(quest.logo)
+        if p.exists():
+            return p.read_bytes()
+        cand = Path(__file__).resolve().parent.parent.parent / quest.logo
+        if cand.exists():
+            return cand.read_bytes()
+        return None
+
     def count_nodes(self) -> int:
         """Общее число узлов в Merkle DAG."""
         return len(self._cf_nodes)

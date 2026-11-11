@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from pathlib import Path
 from typing import Any, Optional
 
 from portal_volya.core.crypto import KeyPair, hash_canonical
@@ -289,6 +290,42 @@ def ensure_initiation_quest(
     )
     return initiation_quest
 
+def _load_and_store_volya_logo(store: Any) -> Optional[str]:
+    """Загрузка volya_logo.jpg и сохранение в CAS блобы хранилища."""
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "volya_logo.jpg",
+        Path("volya_logo.jpg"),
+    ]
+    logo_path = next((p for p in candidates if p.exists()), None)
+    if not logo_path:
+        return None
+    try:
+        logo_bytes = logo_path.read_bytes()
+        return store.put_blob(logo_bytes)
+    except Exception:
+        return None
+
+
+def _ensure_root_quest_logo(store: Any, root_q: Quest) -> None:
+    """Проверка и обновление логотипа в корневом квесте «Воля»."""
+    has_blob = False
+    if root_q.logo:
+        try:
+            has_blob = bool(store.get_blob(root_q.logo))
+        except Exception:
+            has_blob = False
+
+    if not has_blob:
+        logo_hash = _load_and_store_volya_logo(store)
+        if logo_hash:
+            root_q.logo = logo_hash
+            if hasattr(store, "save_quest"):
+                store.save_quest(root_q)
+            elif hasattr(store, "_cf_quests"):
+                import ormsgpack
+                store._cf_quests[root_q.id.encode("utf-8")] = ormsgpack.packb(root_q.model_dump())
+
+
 def ensure_genesis_tree(
     store: Any,
     key_sigom: Optional[KeyPair] = None,
@@ -307,12 +344,14 @@ def ensure_genesis_tree(
         if root_id:
             root_q = store.get_quest(root_id)
             if root_q:
+                _ensure_root_quest_logo(store, root_q)
                 ensure_initiation_quest(store, key_sigom, root_q.id)
                 return root_q
     elif hasattr(store, "_cf_meta") and b"root_quest_id" in store._cf_meta:
         root_id = store._cf_meta[b"root_quest_id"].decode("utf-8")
         root_q = store.get_quest(root_id)
         if root_q:
+            _ensure_root_quest_logo(store, root_q)
             return root_q
 
     key_sigom = key_sigom or derive_genesis_keypair(SIGOM_SEED)
@@ -484,6 +523,8 @@ def ensure_genesis_tree(
         ],
     )
 
+    volya_logo_hash = _load_and_store_volya_logo(store)
+
     root_quest = Quest(
         id="quest-volya-root",
         parent_quest_id=None,
@@ -492,6 +533,7 @@ def ensure_genesis_tree(
         kon=kon_volya,
         owner_pubkey=key_sigom.public_hex,
         created_at="2026-09-06T01:20:00Z",
+        logo=volya_logo_hash,
     )
     node_root_id = hash_canonical(root_quest.model_dump())
     sig_root = key_sigom.sign(node_root_id.encode("utf-8"))

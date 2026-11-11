@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import (
@@ -42,6 +43,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QRadialGradient,
+    QLinearGradient,
 )
 from PySide6.QtWidgets import QWidget
 
@@ -102,14 +104,14 @@ class QuestTreeHUD(QWidget):
         self.spiral_center = QPointF(264.0, 72.0)
         self.spiral_radius = 32.0  # диаметр 64px
 
-        # Выбран ли квест (до первого выбора спираль не видна, после выбора дуга, нить и выбранный квест видны постоянно)
+        # Кэш аватарок квестов
+        self._quest_pixmaps: Dict[str, QPixmap] = {}
+
+        # Выбран ли квест (до первого выбора логотип не виден, после выбора дуга, нить и выбранный квест видны постоянно)
         self.has_selected_quest: bool = False
         self.active_quest_id: str = "quest-volya-root"
         self.active_quest_title: str = "Воля"
-        self._active_quest_pixmap: Optional[QPixmap] = None
-
-        # Кэш аватарок квестов
-        self._quest_pixmaps: Dict[str, QPixmap] = {}
+        self._active_quest_pixmap: Optional[QPixmap] = self.get_volya_logo_pixmap(size=128)
 
         # Список узлов открытого дерева
         self.tree_nodes: List[QuestTreeNode] = []
@@ -162,20 +164,95 @@ class QuestTreeHUD(QWidget):
     # Загрузка и генерация аватарок квестов
     # -------------------------------------------------------------
 
+    def get_volya_logo_pixmap(self, size: int = 128) -> QPixmap:
+        """Получение или кэширование круглого аватара Вольного Древа из модели квеста «Воля» (quest.logo)."""
+        cache_key = f"quest-volya-root:{size}"
+        if cache_key in self._quest_pixmaps:
+            return self._quest_pixmaps[cache_key]
+
+        logo_bytes = None
+        # 1. Загружаем модель корневого квеста «Воля» из DAGStore и извлекаем его логотип
+        try:
+            root_q = self.node.dag_store.get_quest("quest-volya-root")
+            if root_q and root_q.logo:
+                logo_bytes = self.node.dag_store.get_quest_logo(root_q)
+        except Exception:
+            logo_bytes = None
+
+        # 2. Резервный источник: файл на диске
+        if not logo_bytes:
+            candidates = [
+                Path(__file__).resolve().parent.parent.parent / "volya_logo.jpg",
+                Path("volya_logo.jpg"),
+            ]
+            logo_path = next((p for p in candidates if p.exists()), None)
+            if logo_path:
+                try:
+                    logo_bytes = logo_path.read_bytes()
+                except Exception:
+                    pass
+
+        if logo_bytes:
+            try:
+                img = QImage()
+                img.loadFromData(logo_bytes)
+                if not img.isNull():
+                    # Кадрируем круглый медальон без белых угловых полей (111, 111, 1826, 1826)
+                    if img.width() > 500 and img.height() > 500:
+                        cropped = img.copy(111, 111, 1826, 1826)
+                    else:
+                        cropped = img
+
+                    scaled = cropped.scaled(
+                        size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+                    )
+
+                    target = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+                    target.fill(Qt.transparent)
+
+                    painter = QPainter(target)
+                    painter.setRenderHint(QPainter.Antialiasing, True)
+                    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+                    clip_path = QPainterPath()
+                    clip_path.addEllipse(0, 0, size, size)
+                    painter.setClipPath(clip_path)
+                    painter.drawImage(0, 0, scaled)
+                    painter.end()
+
+                    pix = QPixmap.fromImage(target)
+                    self._quest_pixmaps[cache_key] = pix
+                    return pix
+            except Exception:
+                pass
+
+        # Резервный аватар, если файл логотипа недоступен
+        fallback_bytes = generate_default_avatar_png("Воля", "quest-volya-root:Воля", size=size)
+        pix = make_circular_pixmap(fallback_bytes, size=size)
+        self._quest_pixmaps[cache_key] = pix
+        return pix
+
     def get_quest_pixmap(self, quest: Quest, size: int = 128) -> QPixmap:
-        """Получение или процедурная генерация священного аватара квеста."""
+        """Получение аватара квеста из модели (quest.logo), из RocksDB CAS или процедурная генерация."""
         if quest.id in self._quest_pixmaps:
             return self._quest_pixmaps[quest.id]
 
-        # Проверяем, есть ли сохраненный аватар в RocksDB
         avatar_bytes = None
-        try:
-            avatar_bytes = self.node.dag_store.get_blob(quest.id)
-        except Exception:
-            avatar_bytes = None
+        # 1. Извлекаем логотип из модели Quest через DAGStore
+        if quest.logo:
+            try:
+                avatar_bytes = self.node.dag_store.get_quest_logo(quest)
+            except Exception:
+                avatar_bytes = None
 
+        # 2. Проверяем сохраненный блоб по quest.id
         if not avatar_bytes:
-            # Генерируем уникальный узор из 9 золотых нитей по сиду квеста
+            try:
+                avatar_bytes = self.node.dag_store.get_blob(quest.id)
+            except Exception:
+                avatar_bytes = None
+
+        # 3. Если логотип не найден — генерируем процедурные золотые нити
+        if not avatar_bytes:
             avatar_bytes = generate_default_avatar_png(quest.title, f"{quest.id}:{quest.title}", size=size)
 
         pix = make_circular_pixmap(avatar_bytes, size=size)
@@ -187,7 +264,7 @@ class QuestTreeHUD(QWidget):
         self.active_quest_id = quest_id
         if quest_id == "quest-volya-root":
             self.active_quest_title = "Воля"
-            self._active_quest_pixmap = None
+            self._active_quest_pixmap = self.get_volya_logo_pixmap(size=128)
         else:
             q = self.node.dag_store.get_quest(quest_id)
             if q:
@@ -195,7 +272,7 @@ class QuestTreeHUD(QWidget):
                 self._active_quest_pixmap = self.get_quest_pixmap(q, size=128)
             else:
                 self.active_quest_title = "Воля"
-                self._active_quest_pixmap = None
+                self._active_quest_pixmap = self.get_volya_logo_pixmap(size=128)
         self.quest_selected.emit(quest_id)
         self.update()
 
@@ -532,8 +609,15 @@ class QuestTreeHUD(QWidget):
         stem_color = QColor(226, 232, 240, 190) if night else QColor(212, 175, 55, 190)
 
         # 1. Правая дуга аватарки игрока:
-        # Если квест выбран — видна постоянно. До выбора — при наведении или открытии
-        if self.has_selected_quest or self._arc_visible or self._avatar_hovered or self._arc_hovered or self._tree_open:
+        # Если квест выбран — видна постоянно (вместе с соединительной нитью).
+        # До выбора квеста — появляется только при наведении на аватарку или дугу, и горит ярко!
+        if (
+            self.has_selected_quest
+            or self._arc_visible
+            or self._avatar_hovered
+            or self._arc_hovered
+            or self._tree_open
+        ):
             self._draw_avatar_arc(painter, glow_color, core_color)
 
         # 2. Соединительная нить: Дуга -> Спираль
@@ -573,7 +657,7 @@ class QuestTreeHUD(QWidget):
         painter.end()
 
     def _draw_avatar_arc(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
-        """Отрисовка светящейся дуги справа от аватарки игрока."""
+        """Отрисовка дуги справа от аватарки игрока."""
         arc_box = QRectF(
             self.avatar_center.x() - self.arc_radius,
             self.avatar_center.y() - self.arc_radius,
@@ -583,214 +667,562 @@ class QuestTreeHUD(QWidget):
         start_angle = int(-45 * 16)
         span_angle = int(90 * 16)
 
-        alpha = 240 if self._arc_hovered else (150 if self._avatar_hovered else 90)
+        # Активное состояние выбора: до первого выбора, при открытом дереве, наведении или перелёте
+        is_active_selection = (
+            not self.has_selected_quest
+            or self._tree_open
+            or self._unfold_progress > 0.001
+            or self._arc_hovered
+            or self._avatar_hovered
+            or self._gliding_node is not None
+            or self._pending_selection_node is not None
+        )
 
-        # Внешнее свечение
-        glow_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(alpha * 0.45)), 4.5)
-        glow_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(glow_pen)
-        painter.drawArc(arc_box, start_angle, span_angle)
+        if is_active_selection:
+            # АКТИВНОЕ ВЫБИРАНИЕ / ПРИЗЫВ: дуга горит ярко и заново сияет в полную силу
+            hovered = self._arc_hovered or self._avatar_hovered
+            alpha = 255 if hovered else 225
+            glow_alpha = 180 if hovered else 140
 
-        # Ядро дуги
-        core_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), alpha), 1.8)
-        core_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(core_pen)
-        painter.drawArc(arc_box, start_angle, span_angle)
+            # 1. Широкий внешний ореол яркого свечения (8.6px)
+            glow_pen_wide = QPen(
+                QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(glow_alpha * 0.45)),
+                8.6,
+                Qt.SolidLine,
+                Qt.RoundCap,
+            )
+            painter.setPen(glow_pen_wide)
+            painter.drawArc(arc_box, start_angle, span_angle)
 
-    def _draw_bridge_thread(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
-        """Протягивание нити от центра дуги к левому входу двойной спирали."""
+            # 2. Плотный ореол свечения (5.6px)
+            glow_pen_inner = QPen(
+                QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(glow_alpha * 0.85)),
+                5.6,
+                Qt.SolidLine,
+                Qt.RoundCap,
+            )
+            painter.setPen(glow_pen_inner)
+            painter.drawArc(arc_box, start_angle, span_angle)
+
+            # 3. Сияющее белое/золотое ядро дуги (3.4px)
+            core_pen = QPen(
+                QColor(core_color.red(), core_color.green(), core_color.blue(), alpha),
+                3.4,
+                Qt.SolidLine,
+                Qt.RoundCap,
+            )
+            painter.setPen(core_pen)
+            painter.drawArc(arc_box, start_angle, span_angle)
+
+        else:
+            # ЗАТУХАНИЕ ПОСЛЕ ВЫБОРА (в покое при закрытом дереве):
+            # Не мрачное, а чистое, более прозрачное и слегка менее яркое (воздушное)
+            alpha = 145
+            glow_alpha = 50
+
+            base_color = QColor(core_color.red(), core_color.green(), core_color.blue(), alpha)
+            halo_color = QColor(glow_color.red(), glow_color.green(), glow_color.blue(), glow_alpha)
+
+            # 1. Мягкий полупрозрачный ореол (5.4px)
+            glow_pen = QPen(halo_color, 5.4, Qt.SolidLine, Qt.RoundCap)
+            painter.setPen(glow_pen)
+            painter.drawArc(arc_box, start_angle, span_angle)
+
+            # 2. Деликатное прозрачное ядро (3.2px)
+            core_pen = QPen(base_color, 3.2, Qt.SolidLine, Qt.RoundCap)
+            painter.setPen(core_pen)
+            painter.drawArc(arc_box, start_angle, span_angle)
+
+    def _make_ribbon_path(
+        self, pts: List[QPointF], w_start: float, w_end: float, expand: float = 0.0
+    ) -> QPainterPath:
+        """Построение непрерывной объемной ленты ветви без стыков и сегментов."""
+        n = len(pts) - 1
+        if n < 1:
+            return QPainterPath()
+
+        normals: List[QPointF] = []
+        for i in range(len(pts)):
+            if i == 0:
+                tang = QPointF(pts[1].x() - pts[0].x(), pts[1].y() - pts[0].y())
+            elif i == len(pts) - 1:
+                tang = QPointF(pts[-1].x() - pts[-2].x(), pts[-1].y() - pts[-2].y())
+            else:
+                tang = QPointF(pts[i + 1].x() - pts[i - 1].x(), pts[i + 1].y() - pts[i - 1].y())
+            l = math.hypot(tang.x(), tang.y()) or 1.0
+            normals.append(QPointF(-tang.y() / l, tang.x() / l))
+
+        left_pts: List[QPointF] = []
+        right_pts: List[QPointF] = []
+        for i in range(len(pts)):
+            u = i / n
+            w = ((w_start * (1.0 - u) + w_end * u) / 2.0) + expand
+            left_pts.append(QPointF(pts[i].x() + normals[i].x() * w, pts[i].y() + normals[i].y() * w))
+            right_pts.append(QPointF(pts[i].x() - normals[i].x() * w, pts[i].y() - normals[i].y() * w))
+
+        path = QPainterPath()
+        path.moveTo(left_pts[0])
+        for pt in left_pts[1:]:
+            path.lineTo(pt)
+
+        # Плавное скругление на растущем конце
+        tip_norm = normals[-1]
+        tip_tang = QPointF(pts[-1].x() - pts[-2].x(), pts[-1].y() - pts[-2].y())
+        lt = math.hypot(tip_tang.x(), tip_tang.y()) or 1.0
+        tip_dir = QPointF(tip_tang.x() / lt, tip_tang.y() / lt)
+        w_tip = (w_end / 2.0) + expand
+        p_tip_apex = QPointF(pts[-1].x() + tip_dir.x() * w_tip, pts[-1].y() + tip_dir.y() * w_tip)
+
+        path.cubicTo(
+            QPointF(left_pts[-1].x() + tip_dir.x() * (w_tip * 0.55), left_pts[-1].y() + tip_dir.y() * (w_tip * 0.55)),
+            QPointF(p_tip_apex.x() + tip_norm.x() * (w_tip * 0.55), p_tip_apex.y() + tip_norm.y() * (w_tip * 0.55)),
+            p_tip_apex,
+        )
+        path.cubicTo(
+            QPointF(p_tip_apex.x() - tip_norm.x() * (w_tip * 0.55), p_tip_apex.y() - tip_norm.y() * (w_tip * 0.55)),
+            QPointF(right_pts[-1].x() + tip_dir.x() * (w_tip * 0.55), right_pts[-1].y() + tip_dir.y() * (w_tip * 0.55)),
+            right_pts[-1],
+        )
+
+        for pt in reversed(right_pts[:-1]):
+            path.lineTo(pt)
+
+        # Плавное скругление у основания
+        base_norm = normals[0]
+        base_tang = QPointF(pts[0].x() - pts[1].x(), pts[0].y() - pts[1].y())
+        lb = math.hypot(base_tang.x(), base_tang.y()) or 1.0
+        base_dir = QPointF(base_tang.x() / lb, base_tang.y() / lb)
+        w_base = (w_start / 2.0) + expand
+        p_base_apex = QPointF(pts[0].x() + base_dir.x() * w_base, pts[0].y() + base_dir.y() * w_base)
+
+        path.cubicTo(
+            QPointF(right_pts[0].x() + base_dir.x() * (w_base * 0.55), right_pts[0].y() + base_dir.y() * (w_base * 0.55)),
+            QPointF(p_base_apex.x() - base_norm.x() * (w_base * 0.55), p_base_apex.y() - base_norm.y() * (w_base * 0.55)),
+            p_base_apex,
+        )
+        path.cubicTo(
+            QPointF(p_base_apex.x() + base_norm.x() * (w_base * 0.55), p_base_apex.y() + base_norm.y() * (w_base * 0.55)),
+            QPointF(left_pts[0].x() + base_dir.x() * (w_base * 0.55), left_pts[0].y() + base_dir.y() * (w_base * 0.55)),
+            left_pts[0],
+        )
+
+        path.closeSubpath()
+        return path
+
+    def _draw_volumetric_branch(
+        self,
+        painter: QPainter,
+        pts: List[QPointF],
+        w_start: float,
+        w_end: float,
+        night: bool,
+    ) -> None:
+        """Отрисовка цельной утончающейся ветви с градиентным объемом и контуром (без сегментов)."""
+        if len(pts) < 2:
+            return
+
+        # 1. Мягкий внешний ореол свечения
+        glow_color = QColor(241, 245, 249, 35) if night else QColor(250, 204, 21, 40)
+        glow_path = self._make_ribbon_path(pts, w_start, w_end, expand=3.0)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow_color)
+        painter.drawPath(glow_path)
+
+        # 2. Объемное тело ветви с плавным градиентом вдоль древесины
+        body_path = self._make_ribbon_path(pts, w_start, w_end, expand=0.0)
+        grad = QLinearGradient(pts[0], pts[-1])
+        if night:
+            grad.setColorAt(0.0, QColor(255, 255, 255, 240))
+            grad.setColorAt(0.4, QColor(226, 232, 240, 220))
+            grad.setColorAt(1.0, QColor(148, 163, 184, 190))
+            rim_color = QColor(255, 255, 255, 130)
+            spine_color = QColor(255, 255, 255, 200)
+        else:
+            grad.setColorAt(0.0, QColor(254, 240, 138, 250))
+            grad.setColorAt(0.4, QColor(250, 204, 21, 230))
+            grad.setColorAt(1.0, QColor(217, 119, 6, 190))
+            rim_color = QColor(254, 240, 138, 160)
+            spine_color = QColor(255, 255, 255, 210)
+
+        # 3. Градиентный контур, подчеркивающий объем
+        painter.setBrush(QBrush(grad))
+        painter.setPen(QPen(rim_color, 0.85))
+        painter.drawPath(body_path)
+
+        # 4. Светящаяся центральная жила-сердцевина (непрерывный штрих без стыков)
+        spine = QPainterPath()
+        spine.moveTo(pts[0])
+        for pt in pts[1:]:
+            spine.lineTo(pt)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(spine_color, 1.1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawPath(spine)
+
+    def _draw_translucent_bridge(
+        self,
+        painter: QPainter,
+        pts: List[QPointF],
+        w_start: float,
+        w_end: float,
+        glow_color: QColor,
+        core_color: QColor,
+    ) -> None:
+        """
+        Отрисовка чистого, полупрозрачного и спокойного моста связи в покое.
+        Не мрачный, а чистый, воздушный, в тон живого света Древа.
+        """
+        if len(pts) < 2:
+            return
+
+        alpha = 145
+        glow_alpha = 45
+
+        base_color = QColor(core_color.red(), core_color.green(), core_color.blue(), alpha)
+        halo_color = QColor(glow_color.red(), glow_color.green(), glow_color.blue(), glow_alpha)
+        rim_color = QColor(core_color.red(), core_color.green(), core_color.blue(), int(alpha * 0.85))
+
+        # 1. Мягкий полупрозрачный ореол того же живого цвета (expand=2.0)
+        glow_path = self._make_ribbon_path(pts, w_start, w_end, expand=2.0)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(halo_color)
+        painter.drawPath(glow_path)
+
+        # 2. Чистое полупрозрачное тело ветви (однотонное, без мрачности)
+        body_path = self._make_ribbon_path(pts, w_start, w_end, expand=0.0)
+        painter.setBrush(QBrush(base_color))
+        painter.setPen(QPen(rim_color, 0.6))
+        painter.drawPath(body_path)
+
+    def _draw_leaf(
+        self,
+        painter: QPainter,
+        pos: QPointF,
+        angle_rad: float,
+        length: float = 13.0,
+        width: float = 5.2,
+        night: bool = True,
+        alpha_scale: float = 1.0,
+    ) -> None:
+        """Вспомогательная отрисовка листочка (сохранена для совместимости)."""
+        pass
+
+    def _trunk_point(self, y: float, stem_top_y: float) -> QPointF:
+        """Плавная органическая форма ствола Древа с мягким живым изгибом."""
+        stem_x = self.spiral_center.x()
+        dy = max(0.0, y - stem_top_y)
+        offset_x = 4.2 * math.sin(dy * 0.022) + 2.2 * math.sin(dy * 0.055)
+        return QPointF(stem_x + offset_x, y)
+
+    def _draw_bridge_thread(
+        self, painter: QPainter, glow_color: QColor, core_color: QColor
+    ) -> None:
+        """
+        Протягивание живой утончающейся веточки от правой дуги аватарки к левому краю Истока («Воля»).
+        """
         p_start = QPointF(self.avatar_center.x() + self.arc_radius, self.avatar_center.y())
         p_target = QPointF(self.spiral_center.x() - self.spiral_radius, self.spiral_center.y())
 
-        # Если квест уже выбран, или идёт анимация перелёта — нить натянута полностью
+        # Если квест уже выбран, или идёт анимация перелёта — веточка распущена полностью
         if self.has_selected_quest or self._gliding_node or self._pending_selection_node:
             t = 1.0
         else:
-            # Прогресс протягивания первой фазы (0.0 -> 0.22)
             t = min(1.0, self._unfold_progress / 0.22) if self._unfold_progress > 0 else 0.0
             if self._arc_hovered and t < 0.2:
                 t = 0.2
 
-        cur_end = QPointF(p_start.x() + (p_target.x() - p_start.x()) * t, p_start.y())
+        if t <= 0.001:
+            return
 
-        glow_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 70), 3.5)
-        glow_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(glow_pen)
-        painter.drawLine(p_start, cur_end)
+        dx = p_target.x() - p_start.x()
+        c1 = QPointF(p_start.x() + dx * 0.35, p_start.y() + 11.0)
+        c2 = QPointF(p_start.x() + dx * 0.70, p_target.y() - 7.0)
 
-        core_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), 230), 1.5)
-        core_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(core_pen)
-        painter.drawLine(p_start, cur_end)
+        def bz_pt(u: float) -> QPointF:
+            mu = 1.0 - u
+            return QPointF(
+                mu**3 * p_start.x() + 3.0 * mu**2 * u * c1.x() + 3.0 * mu * u**2 * c2.x() + u**3 * p_target.x(),
+                mu**3 * p_start.y() + 3.0 * mu**2 * u * c1.y() + 3.0 * mu * u**2 * c2.y() + u**3 * p_target.y(),
+            )
 
-        # Искорка на конце движущейся нити
-        if t < 1.0 and t > 0.01:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(core_color)
-            painter.drawEllipse(cur_end, 2.4, 2.4)
+        steps = 28
+        max_step = max(1, int(steps * t))
+        pts = [bz_pt((i / steps) * t) for i in range(max_step + 1)]
+
+        # Утончение от дуги аватарки (3.6px) к Истоку (2.0px)
+        w_s = 3.6
+        w_e = 3.6 * (1.0 - t) + 2.0 * t
+        night = self.is_night()
+
+        is_active_selection = (
+            not self.has_selected_quest
+            or self._tree_open
+            or self._unfold_progress > 0.001
+            or self._arc_hovered
+            or self._avatar_hovered
+            or self._gliding_node is not None
+            or self._pending_selection_node is not None
+        )
+
+        if is_active_selection:
+            # АКТИВНОЕ ВЫБИРАНИЕ: ветка заново ярко светится вместе со всем Древом
+            self._draw_volumetric_branch(painter, pts, w_s, w_e, night)
+            if t < 1.0 and t > 0.01:
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(core_color)
+                painter.drawEllipse(pts[-1], 2.8, 2.8)
+        else:
+            # ЗАТУХАНИЕ ПОСЛЕ ВЫБОРА (в покое при закрытом дереве):
+            # Чистая, более прозрачная, слегка менее яркая однотонная ветвь
+            self._draw_translucent_bridge(painter, pts, w_s, w_e, glow_color, core_color)
 
     def _draw_spiral_or_selected_quest(
         self, painter: QPainter, glow_color: QColor, core_color: QColor
     ) -> None:
         """
-        Отрисовка двойной спирали (Исток «Воля») или аватарки выбранного квеста.
-        На месте спирали (264, 72) диаметром 64px элемент присутствует постоянно после выбора.
-        До первого выбора спираль не видна в спокойном состоянии.
+        Отрисовка канонического логотипа Вольного Древа (Исток «Воля») или аватарки выбранного квеста.
+        На месте истока (264, 72) диаметром 64px элемент присутствует постоянно после выбора.
+        До первого выбора не виден в спокойном состоянии.
         """
         cx = self.spiral_center.x()
         cy = self.spiral_center.y()
-        R = self.spiral_radius  # 32px (диаметр 64px)
 
-        # 1. Если дерево закрыто и квест ещё не выбран — спираль не рисуется
+        # 1. Если дерево закрыто и квест ещё не выбран — элемент не рисуется
         if not self.has_selected_quest and not self._tree_open and self._unfold_progress <= 0.0 and not self._gliding_node:
             return
 
-        # 2. Если выбран квест (не «Воля») и дерево не открыто
+        # 2. Если дерево закрыто и не скользит узел:
+        # рисуется выбранный квест (будь то Воля с логотипом Вольного Древа или любой другой квест)
         if (
             self.has_selected_quest
-            and self.active_quest_id != "quest-volya-root"
-            and self._active_quest_pixmap
             and not self._tree_open
             and not self._gliding_node
         ):
+            pixmap = self._active_quest_pixmap or self.get_volya_logo_pixmap(size=128)
             self._draw_bead_disc(
                 painter,
                 self.spiral_center,
                 64.0,
-                self._active_quest_pixmap,
+                pixmap,
                 glow_color,
                 core_color,
                 hovered=self._spiral_hovered,
             )
             return
 
-        # 3. Иначе — рисуется двойная спираль созидания!
-        # Фаза отрисовки спирали: unfold_progress 0.20 -> 0.55
-        spiral_t = 1.0
+        # 3. При открытом дереве (или в процессе его разворачивания):
+        # На вершине стебля (Исток Древа) отображается канонический логотип квеста «Воля»
+        appear_t = 1.0
         if self._tree_open or self._unfold_progress < 1.0:
             if self._unfold_progress <= 0.20:
-                spiral_t = 0.0
+                appear_t = 0.0
             else:
-                spiral_t = min(1.0, (self._unfold_progress - 0.20) / 0.35)
+                appear_t = min(1.0, (self._unfold_progress - 0.20) / 0.35)
 
-        # В спокойном состоянии выбранной «Воли» спираль видна постоянно на 100%
-        if not self._tree_open and self.has_selected_quest and self.active_quest_id == "quest-volya-root":
-            spiral_t = 1.0
+        # Если квест «Воля» уже выбран — логотип остаётся виден на 100% при сворачивании дерева
+        if self.has_selected_quest and self.active_quest_id == "quest-volya-root":
+            appear_t = 1.0
 
-        if spiral_t <= 0.0:
+        if appear_t <= 0.0:
             return
 
-        # 1. Ветвь 1: от входа (cx - R, cy) скручивается в центр (cx, cy)
-        a1 = R / (4.0 * math.pi)
-        steps = 80
-        pts1: List[QPointF] = []
-        max_i1 = int(steps * spiral_t)
-
-        for i in range(max_i1 + 1):
-            t_frac = i / steps
-            th = 4.0 * math.pi * (1.0 - t_frac)
-            ang = th + math.pi
-            r = a1 * th
-            pts1.append(QPointF(cx + r * math.cos(ang), cy + r * math.sin(ang)))
-
-        # 2. Ветвь 2: из центра (cx, cy) раскручивается наружу к нижней точке (cx, cy + R)
-        a2 = R / (4.5 * math.pi)
-        pts2: List[QPointF] = []
-        max_i2 = int(steps * spiral_t)
-
-        for i in range(max_i2 + 1):
-            t_frac = i / steps
-            th = 4.5 * math.pi * t_frac
-            r = a2 * th
-            pts2.append(QPointF(cx + r * math.cos(th), cy + r * math.sin(th)))
-
-        # Подсветка спирали при наведении
-        halo_alpha = 140 if self._spiral_hovered else 75
-        core_alpha = 255 if self._spiral_hovered else 225
-
-        glow_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), halo_alpha), 3.8)
-        glow_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(glow_pen)
-        for i in range(len(pts1) - 1):
-            painter.drawLine(pts1[i], pts1[i + 1])
-        for i in range(len(pts2) - 1):
-            painter.drawLine(pts2[i], pts2[i + 1])
-
-        core_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), core_alpha), 1.6)
-        core_pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(core_pen)
-        for i in range(len(pts1) - 1):
-            painter.drawLine(pts1[i], pts1[i + 1])
-        for i in range(len(pts2) - 1):
-            painter.drawLine(pts2[i], pts2[i + 1])
-
-        # Центральная золотая точка-семя
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(core_color)
-        painter.drawEllipse(self.spiral_center, 2.6, 2.6)
+        volya_pix = self.get_volya_logo_pixmap(size=128)
+        self._draw_bead_disc(
+            painter,
+            self.spiral_center,
+            64.0 * appear_t,
+            volya_pix,
+            glow_color,
+            core_color,
+            hovered=self._spiral_hovered,
+        )
 
     def _draw_tree_stem_and_branches(
         self, painter: QPainter, stem_color: QColor, glow_color: QColor
     ) -> None:
-        """Отрисовка ниспадающего стебля Древа и плавных ветвей к бусинкам."""
+        """Отрисовка ниспадающего утончающегося ствола Древа и гибких веточек к квестам."""
         stem_x = self.spiral_center.x()
         stem_top_y = self.spiral_center.y() + self.spiral_radius  # 104.0
 
-        # Стебель заканчивается ровно на самом нижнем ответвлении без лишнего отростка вниз
+        # Ствол имеет плавное органическое продолжение вниз за нижнее ответвление
         stem_nodes = [n for n in self.tree_nodes if abs(n.parent_pos.x() - stem_x) < 1.0]
-        if stem_nodes:
-            max_y = max(n.parent_pos.y() for n in stem_nodes)
-        else:
-            max_y = stem_top_y
+        max_y = max((n.parent_pos.y() for n in stem_nodes), default=stem_top_y)
+        stem_bottom_target = (max_y + 55.0) if stem_nodes else stem_top_y
 
-        # Фаза разворачивания стебля: 0.50 -> 0.75
+        # Фаза разворачивания ствола: 0.50 -> 0.75
         stem_t = min(1.0, max(0.0, (self._unfold_progress - 0.50) / 0.25))
-        current_stem_bottom = stem_top_y + (max_y - stem_top_y) * stem_t
+        current_stem_bottom = stem_top_y + (stem_bottom_target - stem_top_y) * stem_t
 
-        # 1. Основной стебель вниз (только до нижнего ответвления)
+        pts_stem = []
+        stem_glow = QPainterPath()
+        stem_body = QPainterPath()
+
+        # 1. Живой ствол Древа: утончается сверху вниз (4.8px -> 2.0px)
         if current_stem_bottom > stem_top_y:
-            stem_glow = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 50), 3.2)
-            stem_glow.setCapStyle(Qt.RoundCap)
-            stem_core = QPen(stem_color, 1.6)
-            stem_core.setCapStyle(Qt.RoundCap)
-            painter.setPen(stem_glow)
-            painter.drawLine(QPointF(stem_x, stem_top_y), QPointF(stem_x, current_stem_bottom))
-            painter.setPen(stem_core)
-            painter.drawLine(QPointF(stem_x, stem_top_y), QPointF(stem_x, current_stem_bottom))
+            stem_steps = 32
+            max_s = max(1, int(stem_steps * stem_t))
+            for i in range(max_s + 1):
+                y = stem_top_y + (current_stem_bottom - stem_top_y) * (i / max_s)
+                pts_stem.append(self._trunk_point(y, stem_top_y))
 
-        # 2. Ветви к узлам (фаза: 0.70 -> 1.0)
+            w_s = 4.8
+            w_e = 4.8 * (1.0 - stem_t) + 2.0 * stem_t
+            stem_glow = self._make_ribbon_path(pts_stem, w_s, w_e, expand=3.0)
+            stem_body = self._make_ribbon_path(pts_stem, w_s, w_e, expand=0.0)
+
+        # 2. Живые веточки к узлам (фаза: 0.70 -> 1.0)
         branch_t = min(1.0, max(0.0, (self._unfold_progress - 0.70) / 0.30))
-        if branch_t <= 0.0:
-            return
+        branch_glows = []
+        branch_bodies = []
+        branch_spines = []
 
-        for node in self.tree_nodes:
-            if node == self._gliding_node:
-                continue
+        if branch_t > 0.0:
+            child_parent_ids = {n.quest.parent_quest_id for n in self.tree_nodes}
 
-            p_start = node.parent_pos
-            p_end = node.target_pos
+            for node in self.tree_nodes:
+                if node == self._gliding_node:
+                    continue
 
-            # Плавная кривая ветви
-            cur_p = QPointF(
-                p_start.x() + (p_end.x() - p_start.x()) * branch_t,
-                p_start.y() + (p_end.y() - p_start.y()) * branch_t,
-            )
+                is_from_stem = abs(node.parent_pos.x() - stem_x) < 1.0
+                p_start = self._trunk_point(node.parent_pos.y(), stem_top_y) if is_from_stem else node.parent_pos
+                p_quest = node.target_pos
+                radius = node.current_size / 2.0
+                has_child = node.quest.id in child_parent_ids
 
-            branch_glow = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 45), 3.0)
-            branch_core = QPen(stem_color, 1.4)
+                w_start = 3.6 if is_from_stem else 2.6
+                w_end = 2.0 if has_child else 1.0
 
-            painter.setPen(branch_glow)
-            painter.drawLine(p_start, cur_p)
-            painter.setPen(branch_core)
-            painter.drawLine(p_start, cur_p)
+                bdx = p_quest.x() - p_start.x()
+                bdy = p_quest.y() - p_start.y()
 
-            # Узелок в месте отхождения ветви
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(stem_color)
-            painter.drawEllipse(p_start, 2.0, 2.0)
+                # Естественный природный изгиб с плавным отхождением от ствола без изломов
+                if node.branch_type == "root_child":
+                    bc1 = QPointF(p_start.x() + bdx * 0.35, p_start.y() + 6.0)
+                    bc2 = QPointF(p_start.x() + bdx * 0.75, p_quest.y() - 10.0)
+                elif node.branch_type == "trunk":
+                    bc1 = QPointF(p_start.x() + bdx * 0.35, p_start.y() + 6.0)
+                    bc2 = QPointF(p_start.x() + bdx * 0.75, p_quest.y() - 8.0)
+                elif node.branch_type == "house":
+                    bc1 = QPointF(p_start.x() + bdx * 0.25 - 12.0, p_start.y() + bdy * 0.50)
+                    bc2 = QPointF(p_start.x() + bdx * 0.70 - 10.0, p_start.y() + bdy * 0.85)
+                else:
+                    bc1 = QPointF(p_start.x() + bdx * 0.40 + 12.0, p_start.y() + bdy * 0.30)
+                    bc2 = QPointF(p_start.x() + bdx * 0.80 + 8.0, p_start.y() + bdy * 0.75)
+
+                tdx = p_quest.x() - bc2.x()
+                tdy = p_quest.y() - bc2.y()
+                tlen = math.hypot(tdx, tdy) or 1.0
+                t_ux = tdx / tlen
+                t_uy = tdy / tlen
+
+                N = 32
+                full_pts = []
+                if has_child:
+                    # Ветвь к родительскому квесту плавно входит в его центр
+                    for i in range(N + 1):
+                        t = i / N
+                        mt = 1.0 - t
+                        full_pts.append(QPointF(
+                            mt**3 * p_start.x() + 3.0*mt**2*t * bc1.x() + 3.0*mt*t**2 * bc2.x() + t**3 * p_quest.x(),
+                            mt**3 * p_start.y() + 3.0*mt**2*t * bc1.y() + 3.0*mt*t**2 * bc2.y() + t**3 * p_quest.y(),
+                        ))
+                else:
+                    # Терминальный квест: ветвь проходит под центром квеста и продолжается растущим побегом
+                    ext_len = radius + 22.0
+                    curl_x = -t_uy * 4.0
+                    curl_y = t_ux * 4.0
+                    p_tip = QPointF(p_quest.x() + t_ux * ext_len + curl_x, p_quest.y() + t_uy * ext_len + curl_y)
+                    bc3 = QPointF(p_quest.x() + t_ux * (ext_len * 0.45), p_quest.y() + t_uy * (ext_len * 0.45))
+
+                    for i in range(N + 1):
+                        u = i / N
+                        if u <= 0.68:
+                            t = u / 0.68
+                            mt = 1.0 - t
+                            full_pts.append(QPointF(
+                                mt**3 * p_start.x() + 3.0*mt**2*t * bc1.x() + 3.0*mt*t**2 * bc2.x() + t**3 * p_quest.x(),
+                                mt**3 * p_start.y() + 3.0*mt**2*t * bc1.y() + 3.0*mt*t**2 * bc2.y() + t**3 * p_quest.y(),
+                            ))
+                        else:
+                            t = (u - 0.68) / 0.32
+                            mt = 1.0 - t
+                            full_pts.append(QPointF(
+                                mt**2 * p_quest.x() + 2.0*mt*t * bc3.x() + t**2 * p_tip.x(),
+                                mt**2 * p_quest.y() + 2.0*mt*t * bc3.y() + t**2 * p_tip.y(),
+                            ))
+
+                # Срез точек по текущему прогрессу раскрытия ветвей
+                max_b = max(1, int(N * branch_t))
+                active_pts = full_pts[:max_b + 1]
+                w_cur_end = w_start * (1.0 - branch_t) + w_end * branch_t
+                branch_glows.append(self._make_ribbon_path(active_pts, w_start, w_cur_end, expand=3.0))
+                branch_bodies.append(self._make_ribbon_path(active_pts, w_start, w_cur_end, expand=0.0))
+                if len(active_pts) >= 2:
+                    branch_spines.append(active_pts)
+
+        # 3. Бесшовное объединение ствола и всех ветвей (ликвидация любых стыков и узелков)
+        united_glow = stem_glow
+        for bg in branch_glows:
+            united_glow = united_glow.united(bg)
+
+        united_body = stem_body
+        for bb in branch_bodies:
+            united_body = united_body.united(bb)
+
+        if not united_body.isEmpty():
+            night = self.is_night()
+            p_top = pts_stem[0] if pts_stem else QPointF(stem_x, stem_top_y)
+            p_bot = pts_stem[-1] if pts_stem else QPointF(stem_x, current_stem_bottom)
+            grad = QLinearGradient(p_top, p_bot)
+
+            if night:
+                glow_col = QColor(241, 245, 249, 35)
+                rim_color = QColor(255, 255, 255, 130)
+                spine_color = QColor(255, 255, 255, 200)
+                grad.setColorAt(0.0, QColor(255, 255, 255, 240))
+                grad.setColorAt(0.4, QColor(226, 232, 240, 220))
+                grad.setColorAt(1.0, QColor(148, 163, 184, 190))
+            else:
+                glow_col = QColor(250, 204, 21, 40)
+                rim_color = QColor(254, 240, 138, 160)
+                spine_color = QColor(255, 255, 255, 210)
+                grad.setColorAt(0.0, QColor(254, 240, 138, 250))
+                grad.setColorAt(0.4, QColor(250, 204, 21, 230))
+                grad.setColorAt(1.0, QColor(217, 119, 6, 190))
+
+            # 3.1. Единый внешний ореол свечения
+            if not united_glow.isEmpty():
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(glow_col)
+                painter.drawPath(united_glow)
+
+            # 3.2. Единое монолитное тело Древа со световым рельефным кантом
+            painter.setBrush(QBrush(grad))
+            painter.setPen(QPen(rim_color, 0.85))
+            painter.drawPath(united_body)
+
+            # 3.3. Непрерывная спекулярная жила ствола
+            if pts_stem and len(pts_stem) >= 2:
+                spine_stem = QPainterPath()
+                spine_stem.moveTo(pts_stem[0])
+                for p in pts_stem[1:]:
+                    spine_stem.lineTo(p)
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(spine_color, 1.1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                painter.drawPath(spine_stem)
+
+            # 3.4. Спекулярные жилы боковых веточек (мягко выходят из ствола без узелков)
+            branch_spine_pen = QPen(spine_color, 1.0, Qt.SolidLine, Qt.FlatCap, Qt.RoundJoin)
+            painter.setPen(branch_spine_pen)
+            for b_pts in branch_spines:
+                if len(b_pts) >= 2:
+                    b_spine = QPainterPath()
+                    b_spine.moveTo(b_pts[1])
+                    for p in b_pts[2:]:
+                        b_spine.lineTo(p)
+                    painter.drawPath(b_spine)
 
     def _draw_quest_beads(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
-        """Отрисовка круглых бусинок квестов со священными аватарками."""
+        """Отрисовка круглых бусинок квестов, расположенных поверх ветвей по центру."""
         # Фаза распускания бусинок: 0.80 -> 1.0
         beads_t = min(1.0, max(0.0, (self._unfold_progress - 0.80) / 0.20))
         if beads_t <= 0.0:
@@ -800,8 +1232,9 @@ class QuestTreeHUD(QWidget):
             if node == self._gliding_node or node == self._pending_selection_node:
                 continue
 
-            # Бусинка вырастает из точки ветви
             size = node.current_size * beads_t
+
+            # Диск бусинки квеста поверх ветви по центру
             self._draw_bead_disc(
                 painter,
                 node.current_pos,

@@ -49,6 +49,9 @@ def test_genesis_tree_structure(temp_dag_store):
     assert root.tier == TreeTier.ROOT
     assert root.parent_quest_id is None
     assert root.title == "Воля"
+    assert root.logo is not None
+    assert store.get_blob(root.logo) is not None
+    assert store.get_quest_logo(root) is not None
 
     # 2. Проверяем дочерние квесты корня: «Портал Воли» и «Посвящение»
     root_children = store.get_child_quests("quest-volya-root")
