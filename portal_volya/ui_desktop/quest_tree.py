@@ -765,30 +765,16 @@ class QuestTreeHUD(QWidget):
     def _get_flow_drop_btn_center(self) -> QPointF:
         """Расчет позиции кнопки-капли на конце левой ветви (в конце потока, строго на экране)."""
         btn_max_y = self._get_flow_btn_max_y()
-        y_cursor = 260.0 + self._flow_scroll_y
-        y_left_last = 250.0 + self._flow_scroll_y
-        my_pk = self.node.identity.pubkey if hasattr(self.node, 'identity') and self.node.identity else ''
+        unshifted_bottom = self._compute_unshifted_drops_bottom()
+        target_content_bottom = btn_max_y - 24.0
 
-        for drop in self._active_flow_drops:
-            if my_pk and drop.author_pubkey:
-                is_mine = (drop.author_pubkey == my_pk)
-            elif drop.author_name:
-                is_mine = (drop.author_name == self.node.username)
-            else:
-                is_mine = True
-            text_lines = max(1, len(drop.content) // 26 + 1)
-            h_drop = max(38.0, text_lines * 18.0 + 16.0)
+        if unshifted_bottom > target_content_bottom:
+            # Поток заполняет экран или скроллится: кнопка стабильно закреплена внизу
+            y_btn = btn_max_y
+        else:
+            # Капель мало: кнопка находится сразу под последней каплей
+            y_btn = max(275.0, unshifted_bottom + 24.0)
 
-            if is_mine:
-                y_pos = max(y_cursor, y_left_last + 26.0)
-                y_left_last = y_pos + h_drop
-                y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
-            else:
-                y_pos = max(y_cursor, y_left_last + 26.0)
-                y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
-
-        y_btn_ideal = max(275.0, y_cursor + 24.0)
-        y_btn = max(275.0, min(btn_max_y, y_btn_ideal))
         return self._flow_left_trunk_point(y_btn)
 
     # -------------------------------------------------------------
@@ -2806,7 +2792,7 @@ class QuestTreeHUD(QWidget):
                 y_pos = max(y_cursor, y_right_last + 26.0)
                 y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
 
-        y_right_tip = min(self._get_flow_btn_max_y(), max(y_btn, y_right_last + 24.0))
+        y_right_tip = y_btn
 
         # Построение живой органической правой ветви (без единой прямой линии!)
         y_right_tail = min(y_max_bot, y_right_tip + 28.0)
@@ -2818,10 +2804,11 @@ class QuestTreeHUD(QWidget):
         # Постепенное природное утоньшение: 3.2px у развилки -> 0.5px на кончике
         self._draw_volumetric_branch(painter, right_pts, 3.2, 0.5, night)
 
-        # 5. Отрисовка нанизанных капель ВНУТРЬ потока (исчезают у поворота ветвей y=240 и у нижнего края)
+        # 5. Отрисовка нанизанных капель ВНУТРЬ потока
+        # Капли исчезают у поворота ветвей сверху (y=240) и строго РАНЬШЕ уровня кнопки новой капли снизу
         self._flow_drop_hitboxes.clear()
         y_turn = 240.0
-        y_clip_bottom = y_max_bot - 10.0
+        y_clip_bottom = y_btn - 28.0
         clip_rect = QRectF(0.0, y_turn, float(self.width()), max(10.0, y_clip_bottom - y_turn))
 
         y_c = 260.0 + self._flow_scroll_y
@@ -2845,7 +2832,7 @@ class QuestTreeHUD(QWidget):
                 y_l_acc = y_pos + h_drop
                 y_c = max(y_c, y_pos) + h_drop + 14.0
 
-                # Если капля ушла выше поворота ветвей вниз или ниже экрана — она не рисуется
+                # Если капля ушла выше поворота ветвей или опустилась к уровню кнопки-капли — она исчезает
                 if y_node < y_turn or y_node > y_clip_bottom:
                     continue
 
@@ -2853,10 +2840,11 @@ class QuestTreeHUD(QWidget):
                 r_av = 12.0
                 b_x = pt_node.x() + r_av + 22.0 + 4.0
                 bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
-                self._flow_drop_hitboxes.append((bubble_rect, drop))
+                if y_node <= y_clip_bottom - 6.0:
+                    self._flow_drop_hitboxes.append((bubble_rect, drop))
 
                 fade_top = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
-                fade_bot = min(1.0, max(0.0, (y_clip_bottom - y_node) / 32.0))
+                fade_bot = min(1.0, max(0.0, (y_clip_bottom - y_node) / 28.0))
                 fade = min(fade_top, fade_bot)
 
                 painter.save()
@@ -2872,7 +2860,7 @@ class QuestTreeHUD(QWidget):
                 y_r_acc = y_pos + h_drop
                 y_c = max(y_c, y_pos) + h_drop + 14.0
 
-                # Если капля ушла выше поворота ветвей вниз или ниже экрана — она не рисуется
+                # Если капля ушла выше поворота ветвей или опустилась к уровню кнопки-капли — она исчезает
                 if y_node < y_turn or y_node > y_clip_bottom:
                     continue
 
@@ -2880,10 +2868,11 @@ class QuestTreeHUD(QWidget):
                 r_av = 12.0
                 b_x = pt_node.x() - r_av - 22.0 - 215.0 - 4.0
                 bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
-                self._flow_drop_hitboxes.append((bubble_rect, drop))
+                if y_node <= y_clip_bottom - 6.0:
+                    self._flow_drop_hitboxes.append((bubble_rect, drop))
 
                 fade_top = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
-                fade_bot = min(1.0, max(0.0, (y_clip_bottom - y_node) / 32.0))
+                fade_bot = min(1.0, max(0.0, (y_clip_bottom - y_node) / 28.0))
                 fade = min(fade_top, fade_bot)
 
                 painter.save()
