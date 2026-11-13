@@ -304,6 +304,9 @@ class VolyaLivingWindow(QMainWindow):
         self.quest_tree.setGeometry(0, 0, self.width(), self.height())
         self.quest_tree.setVisible(self.is_authenticated)
 
+        # Живой Поток сотворчества льётся прямо на полотне мира без окон (Zero Window)
+        self.quest_tree.flow_selected.connect(self.quest_tree.open_flow)
+
         # Парящий аватар игрока в левом верхнем углу (чистый, без надписей)
         self.corner_avatar = CornerAvatarWidget(self.node, self, avatar_size=96, glow_spread=10.0)
         self.corner_avatar.move(self._corner_avatar_pos())

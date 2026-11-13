@@ -20,6 +20,7 @@ from portal_volya.core.crypto import (
     hash_canonical,
     verify_signature,
 )
+from portal_volya.core.genesis import EIRA_SEED, derive_genesis_keypair
 from portal_volya.core.models import (
     AIMemory,
     DagNode,
@@ -33,6 +34,7 @@ from portal_volya.core.models import (
     Player,
     PlayerRoleAssignment,
     Quest,
+    QuestFlow,
     Role,
     StepName,
 )
@@ -47,6 +49,7 @@ CF_FLOW_LINKS = "flow_links"    # flow_id -> list of drop_ids
 CF_SUMMARIES = "flow_summaries" # flow_id -> list of FlowSummary dicts
 CF_BLOBS = "blobs"              # blob_hash (Blake3) -> binary data (avatars, images)
 CF_META = "dag_meta"            # служебные метаданные (root_id, stats)
+CF_FLOW_META = "flow_meta"      # flow_id (Blake3/str) -> binary QuestFlow / indices
 
 
 def _h_bytes(hex_str: str) -> bytes:
@@ -77,6 +80,7 @@ class DagStore:
             CF_SUMMARIES: Options(),
             CF_BLOBS: Options(),
             CF_META: Options(),
+            CF_FLOW_META: Options(),
         }
 
         self.db = Rdict(str(self.db_path), options=opts, column_families=cfs)
@@ -90,6 +94,7 @@ class DagStore:
         self._cf_summaries = self.db.get_column_family(CF_SUMMARIES)
         self._cf_blobs = self.db.get_column_family(CF_BLOBS)
         self._cf_meta = self.db.get_column_family(CF_META)
+        self._cf_flow_meta = self.db.get_column_family(CF_FLOW_META)
 
         self._h_nodes = self.db.get_column_family_handle(CF_NODES)
         self._h_quests = self.db.get_column_family_handle(CF_QUESTS)
@@ -100,6 +105,7 @@ class DagStore:
         self._h_summaries = self.db.get_column_family_handle(CF_SUMMARIES)
         self._h_blobs = self.db.get_column_family_handle(CF_BLOBS)
         self._h_meta = self.db.get_column_family_handle(CF_META)
+        self._h_flow_meta = self.db.get_column_family_handle(CF_FLOW_META)
 
         # Автоматическая проверка и очистка дубликатов имён игроков в летописи
         self._deduplicate_players()
@@ -141,6 +147,7 @@ class DagStore:
                 self._cf_summaries = None
                 self._cf_blobs = None
                 self._cf_meta = None
+                self._cf_flow_meta = None
                 self._h_nodes = None
                 self._h_quests = None
                 self._h_drops = None
@@ -150,6 +157,7 @@ class DagStore:
                 self._h_summaries = None
                 self._h_blobs = None
                 self._h_meta = None
+                self._h_flow_meta = None
                 self.db = None
                 gc.collect()
 
@@ -349,6 +357,96 @@ class DagStore:
         """Получение последнего актуального саммари потока."""
         summaries = self.get_flow_summaries(flow_id)
         return summaries[-1] if summaries else None
+
+    # -----------------------------------------------------------------
+    # Потоки квестов (QuestFlow) и участники
+    # -----------------------------------------------------------------
+
+    def put_quest_flow(self, flow: QuestFlow) -> None:
+        """Сохранение метаданных потока сотворчества (Диалог или Беседа)."""
+        f_key = flow.id.encode("utf-8")
+        self._cf_flow_meta[f_key] = ormsgpack.packb(flow.model_dump())
+        if flow.quest_id:
+            q_flows_key = f"quest_flows:{flow.quest_id}".encode("utf-8")
+            raw_list = self._cf_flow_meta.get(q_flows_key)
+            ids = ormsgpack.unpackb(raw_list) if raw_list else []
+            if flow.id not in ids:
+                ids.append(flow.id)
+                self._cf_flow_meta[q_flows_key] = ormsgpack.packb(ids)
+
+    def get_quest_flow(self, flow_id: str) -> Optional[QuestFlow]:
+        """Получение потока сотворчества по идентификатору."""
+        raw = self._cf_flow_meta.get(flow_id.encode("utf-8"))
+        if not raw:
+            return None
+        return QuestFlow(**ormsgpack.unpackb(raw))
+
+    def get_quest_flows(self, quest_id: str) -> list[QuestFlow]:
+        """Получение всех зарегистрированных потоков для указанного квеста."""
+        q_flows_key = f"quest_flows:{quest_id}".encode("utf-8")
+        raw_list = self._cf_flow_meta.get(q_flows_key)
+        flows: list[QuestFlow] = []
+        if raw_list:
+            ids = ormsgpack.unpackb(raw_list)
+            for fid in ids:
+                f = self.get_quest_flow(fid)
+                if f:
+                    flows.append(f)
+
+        # Если для квеста пока нет потоков, автоматически создаём каноническую общую Беседу квеста
+        if not flows:
+            eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
+            quest = self.get_quest(quest_id)
+            q_title = quest.title if quest else "Квест"
+            default_flow = QuestFlow(
+                id=f"flow-{quest_id}-general",
+                quest_id=quest_id,
+                kind=FlowKind.CONVERSATION,
+                title=f"Беседа квеста «{q_title}»",
+                initiator_pubkey=eira_pk,
+                participants=[eira_pk],
+                created_at=datetime.now(timezone.utc).isoformat(),
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+            self.put_quest_flow(default_flow)
+            flows.append(default_flow)
+
+        return flows
+
+    def get_quest_players(self, quest_id: str) -> list[Player]:
+        """
+        Получение списка игроков для формирования потока в квесте.
+        Каноническое правило: Эйра ВСЕГДА первая в списке и единственная, если других игроков пока нет.
+        """
+        eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
+        eira_player = self.get_player(eira_pk)
+        if not eira_player:
+            eira_player = Player(
+                pubkey=eira_pk,
+                username="Эйра",
+                conscience_drops=6000,
+                bio="Муза и ИИ-хранитель Воли",
+                created_at="2026-09-06T00:00:00Z",
+            )
+
+        all_players = self.get_all_players()
+        other_players: list[Player] = []
+        for p in all_players:
+            if p.pubkey == eira_pk:
+                continue
+            # Проверяем, есть ли у игрока роль в этом квесте или общая роль
+            has_role = any(r.quest_id == quest_id for r in p.roles)
+            if has_role:
+                other_players.append(p)
+
+        # Если игроков с ролью в квесте нет, но есть другие зарегистрированные игроки (кроме Эйры)
+        if not other_players:
+            for p in all_players:
+                if p.pubkey != eira_pk:
+                    other_players.append(p)
+
+        # Эйра всегда первая!
+        return [eira_player] + other_players
 
     # -----------------------------------------------------------------
     # Хранилище блобов (Content-Addressed Storage: аватарки, медиа)

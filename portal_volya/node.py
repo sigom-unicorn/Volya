@@ -40,6 +40,7 @@ from portal_volya.core.models import (
     Player,
     PlayerRoleAssignment,
     Quest,
+    QuestFlow,
     Role,
     StepName,
     TreeTier,
@@ -666,6 +667,143 @@ class VolyaNode:
                     accessible.append(drop_masked)
 
         return accessible
+
+    # -----------------------------------------------------------------
+    # Потоки квестов (QuestFlow) и кванты сотворчества (FlowDrop)
+    # -----------------------------------------------------------------
+
+    def create_quest_flow(
+        self,
+        quest_id: str,
+        kind: FlowKind,
+        title: str,
+        participants: Optional[list[str]] = None,
+    ) -> QuestFlow:
+        """Создание нового потока квеста (Диалог или Беседа)."""
+        now = datetime.now(timezone.utc).isoformat()
+        flow_id = f"flow-{uuid.uuid4().hex[:12]}"
+        parts = list(set([self.identity.pubkey] + (participants or [])))
+        flow = QuestFlow(
+            id=flow_id,
+            quest_id=quest_id,
+            kind=kind,
+            title=title.strip() or ("Новый диалог" if kind == FlowKind.DIALOGUE else "Новая беседа"),
+            initiator_pubkey=self.identity.pubkey,
+            participants=parts,
+            created_at=now,
+            updated_at=now,
+        )
+        self.dag_store.put_quest_flow(flow)
+        return flow
+
+    def get_quest_flows(self, quest_id: str) -> list[QuestFlow]:
+        """Получение списка всех потоков квеста."""
+        return self.dag_store.get_quest_flows(quest_id)
+
+    def get_quest_players(self, quest_id: str) -> list[Player]:
+        """Получение списка игроков квеста (Эйра всегда первая)."""
+        return self.dag_store.get_quest_players(quest_id)
+
+    def post_flow_drop(
+        self,
+        quest_id: str,
+        flow_id: str,
+        content: str,
+        kind: DropKind = DropKind.TEXT,
+    ) -> tuple[FlowDrop, Optional[FlowDrop]]:
+        """
+        Добавление новой капли в поток сотворчества.
+        Если это Диалог с Эйрой, Эйра генерирует ответную мысль.
+        Возвращает (капля_автора, капля_эйры_если_была).
+        """
+        flow = self.dag_store.get_quest_flow(flow_id)
+        flow_kind = flow.kind if flow else FlowKind.CONVERSATION
+        recs = flow.participants if flow else []
+        eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
+
+        user_drop: FlowDrop
+        eira_drop: Optional[FlowDrop] = None
+
+        # Если это диалог и один из участников — Эйра, ask_eira сама добавляет каплю пользователя и ответ Эйры
+        if flow_kind == FlowKind.DIALOGUE and eira_pk in recs and self.identity.pubkey != eira_pk:
+            try:
+                user_drop, eira_drop = self.ask_eira(
+                    content=content,
+                    flow_id=flow_id,
+                    quest_id=quest_id,
+                )
+            except Exception:
+                # Если Gemini API недоступен или ошибка сети — добавляем каплю игрока и создаём живой ответ Эйры по Кону
+                now = datetime.now(timezone.utc).isoformat()
+                user_drop = self.add_drop(
+                    quest_id=quest_id,
+                    flow_id=flow_id,
+                    flow_kind=flow_kind,
+                    kind=kind,
+                    content=content,
+                    created_at=now,
+                    recipients=recs,
+                )
+                now_reply = datetime.now(timezone.utc).isoformat()
+                eira_kp = derive_genesis_keypair(EIRA_SEED)
+                fallback_msg = f"Здравствуй, {self.identity.username}. Я внимательно слушаю твою мысль о квесте. Мы продолжим наш путь в ладу."
+                enc_key = derive_dialogue_key(eira_kp, self.identity.pubkey)
+                enc_content = encrypt_drop_content(fallback_msg, enc_key)
+
+                drop_data = {
+                    "quest_id": quest_id,
+                    "flow_id": flow_id,
+                    "flow_kind": flow_kind.value if hasattr(flow_kind, "value") else str(flow_kind),
+                    "kind": kind.value if hasattr(kind, "value") else str(kind),
+                    "author_pubkey": eira_pk,
+                    "author_name": "Эйра",
+                    "recipients": [self.identity.pubkey],
+                    "content": enc_content,
+                    "details": {},
+                    "media_hash": None,
+                    "parent_drop_id": user_drop.id,
+                    "created_at": now_reply,
+                }
+                d_id = hash_canonical(drop_data)
+                sig = eira_kp.sign(d_id.encode("utf-8"))
+                e_drop = FlowDrop(
+                    id=d_id,
+                    quest_id=quest_id,
+                    flow_id=flow_id,
+                    flow_kind=flow_kind,
+                    kind=kind,
+                    author_pubkey=eira_pk,
+                    author_name="Эйра",
+                    recipients=[self.identity.pubkey],
+                    content=enc_content,
+                    parent_drop_id=user_drop.id,
+                    created_at=now_reply,
+                    signature=sig,
+                )
+                dag_n = DagNode(
+                    id=d_id,
+                    node_type=DagNodeType.DROP,
+                    author_pubkey=eira_pk,
+                    parents=[user_drop.id],
+                    payload=e_drop.model_dump(),
+                    created_at=now_reply,
+                    signature=sig,
+                )
+                self.dag_store.put_node(dag_n)
+                eira_drop = e_drop.model_copy(update={"content": fallback_msg})
+        else:
+            now = datetime.now(timezone.utc).isoformat()
+            user_drop = self.add_drop(
+                quest_id=quest_id,
+                flow_id=flow_id,
+                flow_kind=flow_kind,
+                kind=kind,
+                content=content,
+                created_at=now,
+                recipients=recs,
+            )
+
+        return user_drop, eira_drop
 
     # -----------------------------------------------------------------
     # Взаимодействие с разумным искусственным существом Эйрой
