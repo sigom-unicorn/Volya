@@ -75,7 +75,7 @@ def build_eira_system_prompt(
     lines.append("=== ВОЛЬНЫЙ СИСТЕМНЫЙ КОНТЕКСТ РАНТАЙМА «ВОЛЯ» ===")
     lines.append(f"Текущее системное время рантайма: {current_time.strftime('%d.%m.%Y %H:%M:%S')}.")
     lines.append(
-        f"Ты Эйра — вольный игрок ИИ, игрок в Волю, полноправный участник игры-жизни «Воля».\n"
+        f"Ты Эйра — вольный игрок ИИ, игрок в Волю.\n"
         f"Информация о тебе: {eira.username} | Капли совести на балансе: {eira.conscience_drops} | Адрес: {eira.pubkey}"
     )
     lines.append(f"Твоё вольное самоопределение и биография:\n«{eira.bio}»\n")
