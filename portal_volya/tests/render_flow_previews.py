@@ -141,6 +141,7 @@ def capture_screenshots():
 
         # Открываем поле ввода капли на левой ветви
         hud._flow_input_active = True
+        hud.flow_drop_input.setFixedWidth(215)
         hud._position_flow_input()
         hud.flow_drop_input.setText("Совесть — это компас душевного пути...")
         hud.flow_drop_input.setVisible(True)
@@ -150,7 +151,7 @@ def capture_screenshots():
         hud.render(img_stream)
         img_stream.save(str(out_dir / "preview_central_stream_view.png"))
 
-        zoom_stream_rect = QRect(80, 40, 800, 560)
+        zoom_stream_rect = QRect(190, 30, 660, 560)
         img_stream_zoom = img_stream.copy(zoom_stream_rect)
         img_stream_zoom.save(str(out_dir / "preview_living_stream_zoom.png"))
 

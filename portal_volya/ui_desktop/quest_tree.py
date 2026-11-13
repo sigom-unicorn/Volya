@@ -298,8 +298,8 @@ class QuestTreeHUD(QWidget):
         self._active_flow_id: Optional[str] = None
         self._active_flow: Optional[QuestFlow] = None
         self._active_flow_drops: list[FlowDrop] = []
-        self._flow_spiral_center = QPointF(470.0, 72.0)
-        self._flow_spiral_radius = 18.0
+        self._flow_spiral_center = QPointF(520.0, 72.0)
+        self._flow_spiral_radius = 20.0
         self._flow_spiral_hovered: bool = False
         self._flow_drop_btn_hovered: bool = False
         self._flow_scroll_y: float = 0.0
@@ -309,7 +309,7 @@ class QuestTreeHUD(QWidget):
         self.flow_drop_input = QLineEdit(self)
         self.flow_drop_input.setPlaceholderText("Капля мысли в поток...")
         self.flow_drop_input.setFixedHeight(26)
-        self.flow_drop_input.setFixedWidth(240)
+        self.flow_drop_input.setFixedWidth(215)
         self.flow_drop_input.setStyleSheet("""
             QLineEdit {
                 background: rgba(14, 20, 36, 0.94);
@@ -450,6 +450,22 @@ class QuestTreeHUD(QWidget):
         self._quest_pixmaps[cache_key] = pix
         return pix
 
+    def get_double_spiral_pixmap(self, size: int = 96) -> QPixmap:
+        """Получение пиксмапа сакральной двойной спирали."""
+        if hasattr(self, "_cached_double_spiral_pixmap") and self._cached_double_spiral_pixmap:
+            return self._cached_double_spiral_pixmap
+        base_dir = Path(__file__).parent / "assets" / "images"
+        gold_path = base_dir / "sacred_double_spiral_gold.webp"
+        if not gold_path.exists():
+            gold_path = base_dir / "sacred_double_spiral_gold.png"
+        if gold_path.exists():
+            pix = QPixmap(str(gold_path))
+            self._cached_double_spiral_pixmap = pix.scaled(
+                size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            return self._cached_double_spiral_pixmap
+        return QPixmap()
+
     def get_quest_pixmap(self, quest: Quest, size: int = 128) -> QPixmap:
         """Получение аватара квеста из модели (quest.logo), из RocksDB CAS или процедурная генерация."""
         if quest.id in self._quest_pixmaps:
@@ -575,9 +591,9 @@ class QuestTreeHUD(QWidget):
         self.update()
 
     def _position_flow_input(self) -> None:
-        """Позиционирование поля ввода капли слева от кнопки-капли (в ряду капель игрока)."""
+        """Позиционирование поля ввода капли справа от кнопки-капли (внутрь потока)."""
         c_btn = self._get_flow_drop_btn_center()
-        self.flow_drop_input.setGeometry(int(c_btn.x() - 240.0 - 12.0), int(c_btn.y() - 13.0), 240, 26)
+        self.flow_drop_input.setGeometry(int(c_btn.x() + 20.0), int(c_btn.y() - 13.0), 215, 26)
         self.flow_drop_submit_btn.move(
             self.flow_drop_input.width() - 23, (self.flow_drop_input.height() - 20) // 2
         )
@@ -616,8 +632,8 @@ class QuestTreeHUD(QWidget):
         return math.hypot(pt.x() - c_btn.x(), pt.y() - c_btn.y()) <= 18.0
 
     def _get_flow_drop_btn_center(self) -> QPointF:
-        """Расчет позиции кнопки-капли на конце левой ветви."""
-        x_left = 340.0
+        """Расчет позиции кнопки-капли на конце левой ветви (внизу всего потока)."""
+        x_left = 270.0
         y_cursor = 190.0 + self._flow_scroll_y
         y_left_last = 175.0 + self._flow_scroll_y
 
@@ -629,7 +645,7 @@ class QuestTreeHUD(QWidget):
                 is_mine = (drop.author_name == self.node.username)
             else:
                 is_mine = True
-            text_lines = max(1, len(drop.content) // 28 + 1)
+            text_lines = max(1, len(drop.content) // 26 + 1)
             h_drop = max(38.0, text_lines * 18.0 + 16.0)
 
             if is_mine:
@@ -640,7 +656,7 @@ class QuestTreeHUD(QWidget):
                 y_pos = max(y_cursor, y_left_last + 26.0)
                 y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
 
-        y_btn = max(175.0 + self._flow_scroll_y + 40.0, y_left_last + 36.0)
+        y_btn = max(175.0 + self._flow_scroll_y + 40.0, y_cursor + 24.0)
         return QPointF(x_left, y_btn)
 
     # -------------------------------------------------------------
@@ -2489,6 +2505,23 @@ class QuestTreeHUD(QWidget):
     # Отрисовка Живого Потока капель (без окон, прямо на полотне мира)
     # -------------------------------------------------------------
 
+    def _sample_cubic_bezier(
+        self, p0: QPointF, p1: QPointF, p2: QPointF, p3: QPointF, steps: int = 35
+    ) -> list[QPointF]:
+        """Дискретизация кубической кривой Безье с непрерывной кривизной без изломов."""
+        pts: list[QPointF] = []
+        for i in range(steps + 1):
+            t = i / steps
+            u = 1.0 - t
+            u2 = u * u
+            u3 = u2 * u
+            t2 = t * t
+            t3 = t2 * t
+            x = u3 * p0.x() + 3.0 * u2 * t * p1.x() + 3.0 * u * t2 * p2.x() + t3 * p3.x()
+            y = u3 * p0.y() + 3.0 * u2 * t * p1.y() + 3.0 * u * t2 * p2.y() + t3 * p3.y()
+            pts.append(QPointF(x, y))
+        return pts
+
     def _draw_living_flow_stream(
         self,
         painter: QPainter,
@@ -2498,25 +2531,31 @@ class QuestTreeHUD(QWidget):
     ) -> None:
         """
         Отрисовка живого потока капель прямо на полотне мира:
-        - от квеста вправо веточка до двойной спирали (при наведении - заглавие, при клике - закрытие);
-        - второй конец спирали продолжаем веточкой вниз до развилки;
-        - две ветви вниз: левая с каплями игрока и кнопкой 💧, правая с каплями собеседников.
+        - от квеста вправо органическая ветвь до сакральной двойной спирали;
+        - от спирали стебель вниз к развилке;
+        - плавные криволинейные ветви Безье без острых углов:
+          левая ветвь с каплями игрока и кнопкой 💧,
+          правая ветвь с каплями собеседников;
+        - капли и поле ввода растут ВНУТРЬ потока.
         """
         c_quest = self.spiral_center
         c_spiral = self._flow_spiral_center
         r_spiral = self._flow_spiral_radius
 
-        # 1. Веточка вправо от выбранного квеста до двойной спирали
+        # 1. Органическая ветвь вправо от выбранного квеста до двойной спирали
         p_q_right = QPointF(c_quest.x() + self.spiral_radius, c_quest.y())
         p_sp_left = QPointF(c_spiral.x() - r_spiral, c_spiral.y())
-        pts_bridge = [
+        dx = p_sp_left.x() - p_q_right.x()
+        pts_bridge = self._sample_cubic_bezier(
             p_q_right,
-            QPointF((p_q_right.x() + p_sp_left.x()) * 0.5, p_q_right.y() + 3.0),
+            QPointF(p_q_right.x() + dx * 0.35, p_q_right.y() + 2.5),
+            QPointF(p_q_right.x() + dx * 0.70, p_q_right.y() - 2.0),
             p_sp_left,
-        ]
-        self._draw_volumetric_branch(painter, pts_bridge, 3.2, 2.4, night)
+            steps=35,
+        )
+        self._draw_volumetric_branch(painter, pts_bridge, 3.4, 2.4, night)
 
-        # 2. Двойная спираль потока
+        # 2. Сакральная двойная спираль потока
         self._draw_flow_double_spiral(
             painter, c_spiral, r_spiral, glow_color, core_color, self._flow_spiral_hovered
         )
@@ -2525,35 +2564,45 @@ class QuestTreeHUD(QWidget):
         if self._flow_spiral_hovered and self._active_flow:
             self._draw_flow_spiral_tooltip(painter, c_spiral)
 
-        # 3. Стебель от нижнего конца спирали вниз к развилке
+        # 3. Стебель от нижнего полюса спирали вниз к развилке
         p_sp_bottom = QPointF(c_spiral.x(), c_spiral.y() + r_spiral)
-        p_fork = QPointF(c_spiral.x(), 136.0)
-        self._draw_volumetric_branch(
-            painter,
-            [p_sp_bottom, QPointF(c_spiral.x(), 112.0), p_fork],
-            2.6, 2.4, night,
+        p_fork = QPointF(c_spiral.x(), 138.0)
+        stem_pts = self._sample_cubic_bezier(
+            p_sp_bottom,
+            QPointF(c_spiral.x(), c_spiral.y() + r_spiral + 15.0),
+            QPointF(c_spiral.x() - 0.5, 122.0),
+            p_fork,
+            steps=20,
         )
+        self._draw_volumetric_branch(painter, stem_pts, 2.6, 2.4, night)
 
         # 4. Расчет положения левой и правой ветвей
-        x_left = 340.0
-        x_right = 600.0
+        x_left = 270.0
+        x_right = 770.0
         c_btn = self._get_flow_drop_btn_center()
         y_btn = c_btn.y()
 
-        # Построение левой ветви (капли игрока)
-        left_pts = [
+        # Построение плавной левой ветви (без острых углов!)
+        left_curve = self._sample_cubic_bezier(
             p_fork,
-            QPointF(420.0, 142.0),
-            QPointF(360.0, 158.0),
-            QPointF(x_left, 175.0 + self._flow_scroll_y),
-            QPointF(x_left, y_btn),
-        ]
-        self._draw_volumetric_branch(painter, left_pts, 2.6, 1.8, night)
+            QPointF(c_spiral.x() - 60.0, 146.0),
+            QPointF(x_left, 160.0),
+            QPointF(x_left, 205.0),
+            steps=32,
+        )
+        left_pts = list(left_curve)
+        y_step = 14.0
+        cur_y = 205.0 + y_step
+        while cur_y < y_btn:
+            left_pts.append(QPointF(x_left, cur_y))
+            cur_y += y_step
+        left_pts.append(QPointF(x_left, y_btn))
+        self._draw_volumetric_branch(painter, left_pts, 2.5, 1.8, night)
 
         # Круглая кнопка-капля 💧 на конце левой ветви
         self._draw_flow_drop_button(painter, c_btn, glow_color, core_color, night)
 
-        # Построение правой ветви (капли собеседников)
+        # Расчет длины правой ветви (собеседники)
         y_cursor = 190.0 + self._flow_scroll_y
         y_right_last = 175.0 + self._flow_scroll_y
         for drop in self._active_flow_drops:
@@ -2564,7 +2613,7 @@ class QuestTreeHUD(QWidget):
                 is_mine = (drop.author_name == self.node.username)
             else:
                 is_mine = True
-            text_lines = max(1, len(drop.content) // 28 + 1)
+            text_lines = max(1, len(drop.content) // 26 + 1)
             h_drop = max(38.0, text_lines * 18.0 + 16.0)
             if not is_mine:
                 y_pos = max(y_cursor, y_right_last + 26.0)
@@ -2575,16 +2624,24 @@ class QuestTreeHUD(QWidget):
                 y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
 
         y_right_tip = max(y_btn, y_right_last + 40.0)
-        right_pts = [
-            p_fork,
-            QPointF(520.0, 142.0),
-            QPointF(580.0, 158.0),
-            QPointF(x_right, 175.0 + self._flow_scroll_y),
-            QPointF(x_right, y_right_tip),
-        ]
-        self._draw_volumetric_branch(painter, right_pts, 2.6, 0.6, night)
 
-        # 5. Отрисовка нанизанных капель
+        # Построение плавной правой ветви (без острых углов!)
+        right_curve = self._sample_cubic_bezier(
+            p_fork,
+            QPointF(c_spiral.x() + 60.0, 146.0),
+            QPointF(x_right, 160.0),
+            QPointF(x_right, 205.0),
+            steps=32,
+        )
+        right_pts = list(right_curve)
+        cur_y = 205.0 + y_step
+        while cur_y < y_right_tip:
+            right_pts.append(QPointF(x_right, cur_y))
+            cur_y += y_step
+        right_pts.append(QPointF(x_right, y_right_tip))
+        self._draw_volumetric_branch(painter, right_pts, 2.5, 0.8, night)
+
+        # 5. Отрисовка нанизанных капель ВНУТРЬ потока
         y_c = 190.0 + self._flow_scroll_y
         y_l_acc = 175.0 + self._flow_scroll_y
         y_r_acc = 175.0 + self._flow_scroll_y
@@ -2624,62 +2681,43 @@ class QuestTreeHUD(QWidget):
         core_color: QColor,
         hovered: bool,
     ) -> None:
-        """Отрисовка сакральной двойной спирали потока."""
+        """Отрисовка сакральной двойной спирали потока по каноническому образцу."""
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        if hovered:
-            grad = QRadialGradient(center, radius + 8.0)
-            grad.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 190))
-            grad.setColorAt(0.7, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 60))
-            grad.setColorAt(1.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 0))
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(grad))
-            painter.drawEllipse(center, radius + 8.0, radius + 8.0)
-
-        steps = 45
-        max_theta = 2.5 * math.pi
-        a = radius / max_theta
-
-        pts_arm1: list[QPointF] = []
-        pts_arm2: list[QPointF] = []
-
-        for i in range(steps + 1):
-            t = i / steps
-            theta = t * max_theta
-            r = a * theta
-            # Рукав 1: выходит влево (к ветви от квеста)
-            angle1 = math.pi - theta
-            pts_arm1.append(QPointF(center.x() + r * math.cos(angle1), center.y() + r * math.sin(angle1)))
-
-            # Рукав 2: выходит вниз (к ниспадающему стеблю)
-            angle2 = 0.5 * math.pi + theta
-            pts_arm2.append(QPointF(center.x() + r * math.cos(angle2), center.y() + r * math.sin(angle2)))
-
-        halo_pen = QPen(
-            QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 140 if hovered else 80),
-            3.6 if hovered else 2.6,
-            Qt.SolidLine,
-            Qt.RoundCap,
-        )
-        painter.setPen(halo_pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawPolyline(pts_arm1)
-        painter.drawPolyline(pts_arm2)
-
-        core_pen = QPen(
-            QColor(core_color.red(), core_color.green(), core_color.blue(), 255 if hovered else 210),
-            1.8 if hovered else 1.3,
-            Qt.SolidLine,
-            Qt.RoundCap,
-        )
-        painter.setPen(core_pen)
-        painter.drawPolyline(pts_arm1)
-        painter.drawPolyline(pts_arm2)
-
+        # 1. Радиальное свечение вокруг медальона
+        glow_spread = 10.0 if hovered else 6.5
+        r_outer = radius + glow_spread
+        grad = QRadialGradient(center, r_outer)
+        peak_alpha = 210 if hovered else 130
+        grad.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), peak_alpha))
+        grad.setColorAt(0.65, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(peak_alpha * 0.45)))
+        grad.setColorAt(1.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 0))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(core_color if hovered else glow_color)
-        painter.drawEllipse(center, 2.2, 2.2)
+        painter.setBrush(QBrush(grad))
+        painter.drawEllipse(center, r_outer, r_outer)
+
+        # 2. Темная стеклянная подложка медальона
+        painter.setBrush(QColor(14, 20, 36, 235))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(center, radius, radius)
+
+        # 3. Сакральная двойная спираль из изображения
+        pix = self.get_double_spiral_pixmap(size=int(radius * 2.0))
+        if pix and not pix.isNull():
+            target_rect = QRectF(center.x() - radius + 1.0, center.y() - radius + 1.0, (radius - 1.0) * 2.0, (radius - 1.0) * 2.0)
+            painter.drawPixmap(target_rect.toRect(), pix)
+
+        # 4. Тонкий золотой ободок медальона
+        rim_pen = QPen(
+            QColor(core_color.red(), core_color.green(), core_color.blue(), 230 if hovered else 170),
+            1.4 if hovered else 1.1,
+        )
+        painter.setPen(rim_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(center, radius, radius)
+
         painter.restore()
 
     def _draw_flow_spiral_tooltip(self, painter: QPainter, center: QPointF) -> None:
@@ -2789,23 +2827,19 @@ class QuestTreeHUD(QWidget):
         painter.setBrush(QColor(254, 240, 138, 255))
         painter.drawEllipse(node_pt, 3.2, 3.2)
 
-        # Тонкий усик от узла к тексту
+        # Тонкий усик от узла на ветке ВНУТРЬ к тексту
         twig_p0 = node_pt
-        twig_p1 = QPointF(node_pt.x() - 14.0, node_pt.y())
+        twig_p1 = QPointF(node_pt.x() + 16.0, node_pt.y())
         painter.setPen(QPen(QColor(254, 240, 138, 160), 1.2, Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(twig_p0, twig_p1)
 
-        # Эфирное дыхание капли мысли (без рамок окна)
-        bubble_rect = QRectF(node_pt.x() - 238.0, node_pt.y() - 10.0, 220.0, h_drop)
+        # Прозрачное дыхание капли мысли (внутрь потока, без жестких рамок)
+        bubble_rect = QRectF(node_pt.x() + 16.0, node_pt.y() - 10.0, 215.0, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
-        bg_grad.setColorAt(0.0, QColor(24, 32, 54, 110))
-        bg_grad.setColorAt(1.0, QColor(14, 20, 36, 130))
+        bg_grad.setColorAt(0.0, QColor(24, 32, 54, 85))
+        bg_grad.setColorAt(1.0, QColor(14, 20, 36, 100))
         painter.setBrush(QBrush(bg_grad))
-        painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
-
-        painter.setPen(QPen(QColor(254, 240, 138, 70), 1.0))
-        painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
 
         font = QFont("Georgia", 11)
@@ -2866,21 +2900,19 @@ class QuestTreeHUD(QWidget):
             name_char = (drop.author_name or "И")[0].upper()
             painter.drawText(QRectF(c_av.x() - r_av, c_av.y() - r_av, 2 * r_av, 2 * r_av), Qt.AlignCenter, name_char)
 
-        twig_p0 = QPointF(c_av.x() + r_av, c_av.y())
-        twig_p1 = QPointF(c_av.x() + r_av + 12.0, c_av.y())
+        # Тонкий усик от аватарки ВНУТРЬ к тексту
+        twig_p0 = QPointF(c_av.x() - r_av, c_av.y())
+        twig_p1 = QPointF(c_av.x() - r_av - 16.0, c_av.y())
         painter.setPen(QPen(QColor(226, 232, 240, 140), 1.2, Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(twig_p0, twig_p1)
 
-        bubble_rect = QRectF(c_av.x() + r_av + 14.0, node_pt.y() - 10.0, 230.0, h_drop)
+        # Прозрачное дыхание капли мысли (внутрь потока, без жестких рамок)
+        bubble_rect = QRectF(c_av.x() - r_av - 16.0 - 215.0, node_pt.y() - 10.0, 215.0, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
-        bg_grad.setColorAt(0.0, QColor(20, 28, 48, 110))
-        bg_grad.setColorAt(1.0, QColor(12, 18, 32, 130))
+        bg_grad.setColorAt(0.0, QColor(20, 28, 48, 85))
+        bg_grad.setColorAt(1.0, QColor(12, 18, 32, 100))
         painter.setBrush(QBrush(bg_grad))
-        painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
-
-        painter.setPen(QPen(QColor(226, 232, 240, 55), 1.0))
-        painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
 
         font = QFont("Georgia", 11)
