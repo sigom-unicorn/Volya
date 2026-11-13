@@ -40,7 +40,7 @@ class EiraAgent:
         embedding_model: str = "gemini-embedding-001",
     ) -> None:
         self.store = store
-        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
         self.embedding_model = embedding_model
 
         # 1. Определение API ключа из аргументов или переменной среды GOOGLE_API_KEY

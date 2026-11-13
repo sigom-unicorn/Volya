@@ -193,6 +193,24 @@ def test_living_flow_stream_on_canvas(qapp):
         assert not hud._flow_input_active
         assert not hud.flow_drop_input.isVisible()
 
+        # Проверяем отрисовку и копирование текста капли в буфер обмена
+        pix = QPixmap(1000, 700)
+        hud.render(pix)
+        assert len(hud._flow_drop_hitboxes) == 1
+        drop_rect, drop_item = hud._flow_drop_hitboxes[0]
+        assert drop_item.id == drops[0].id
+
+        # Наведение мыши на каплю -> подсветка и курсор
+        move_drop = QMouseEvent(QMouseEvent.Type.MouseMove, drop_rect.center(), Qt.NoButton, Qt.NoButton, Qt.NoModifier)
+        hud.mouseMoveEvent(move_drop)
+        assert hud._hovered_flow_drop_id == drop_item.id
+
+        # Клик по капле -> текст копируется в буфер обмена
+        click_drop = QMouseEvent(QMouseEvent.Type.MouseButtonPress, drop_rect.center(), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_drop)
+        assert QApplication.clipboard().text() == "Живое слово без единого окна!"
+        assert hud._copied_drop_id == drop_item.id
+
         hud.deleteLater()
         node.close()
         del node

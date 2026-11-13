@@ -45,7 +45,7 @@ from PySide6.QtGui import (
     QRadialGradient,
     QLinearGradient,
 )
-from PySide6.QtWidgets import QLineEdit, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QPushButton, QWidget
 
 from portal_volya.core.models import (
     DropKind,
@@ -364,6 +364,14 @@ class QuestTreeHUD(QWidget):
         self._auto_close_timer.setSingleShot(True)
         self._auto_close_timer.timeout.connect(self._on_auto_close_timeout)
 
+        # Интерактивное копирование текста капель
+        self._flow_drop_hitboxes: list[tuple[QRectF, FlowDrop]] = []
+        self._hovered_flow_drop_id: Optional[str] = None
+        self._copied_drop_id: Optional[str] = None
+        self._copied_drop_badge_timer = QTimer(self)
+        self._copied_drop_badge_timer.setSingleShot(True)
+        self._copied_drop_badge_timer.timeout.connect(self._clear_copied_drop_badge)
+
         self.refresh_quests()
         self.refresh_flows_and_players()
 
@@ -616,6 +624,21 @@ class QuestTreeHUD(QWidget):
         self._flow_input_active = False
         self.flow_drop_input.setVisible(False)
         self._load_active_flow_drops()
+        self.update()
+
+    def _clear_copied_drop_badge(self) -> None:
+        """Сброс индикатора скопированной мысли."""
+        self._copied_drop_id = None
+        self.update()
+
+    def _copy_flow_drop_text(self, drop: FlowDrop) -> None:
+        """Копирование чистого текста капли в системный буфер обмена."""
+        text = drop.content or ""
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(text)
+        self._copied_drop_id = drop.id
+        self._copied_drop_badge_timer.start(1800)
         self.update()
 
     def _is_near_flow_spiral(self, pt: QPointF) -> bool:
@@ -998,13 +1021,26 @@ class QuestTreeHUD(QWidget):
         if self._active_flow_id:
             old_spiral_hov = self._flow_spiral_hovered
             old_drop_hov = self._flow_drop_btn_hovered
+            old_hov_drop = self._hovered_flow_drop_id
+
             self._flow_spiral_hovered = self._is_near_flow_spiral(pt)
             self._flow_drop_btn_hovered = self._is_near_flow_drop_btn(pt)
 
-            if self._flow_spiral_hovered or self._flow_drop_btn_hovered:
+            self._hovered_flow_drop_id = None
+            for rect, drop in self._flow_drop_hitboxes:
+                if rect.contains(pt):
+                    self._hovered_flow_drop_id = drop.id
+                    break
+
+            if self._flow_spiral_hovered or self._flow_drop_btn_hovered or self._hovered_flow_drop_id:
                 self.setCursor(Qt.PointingHandCursor)
                 self._auto_close_timer.stop()
-            if old_spiral_hov != self._flow_spiral_hovered or old_drop_hov != self._flow_drop_btn_hovered:
+
+            if (
+                old_spiral_hov != self._flow_spiral_hovered
+                or old_drop_hov != self._flow_drop_btn_hovered
+                or old_hov_drop != self._hovered_flow_drop_id
+            ):
                 self.update()
 
         # Если событие не в интерактивной зоне — пропускаем родителю
@@ -1031,6 +1067,12 @@ class QuestTreeHUD(QWidget):
                 self._toggle_flow_input()
                 event.accept()
                 return
+            # Клик по капле мысли копирует её текст в буфер обмена
+            for rect, drop in self._flow_drop_hitboxes:
+                if rect.contains(pt):
+                    self._copy_flow_drop_text(drop)
+                    event.accept()
+                    return
 
         # 1. Клик по бусинке квеста в развёрнутом дереве:
         # Сначала исчезает дерево, а затем бусинка перелетает к спирали!
@@ -1066,6 +1108,39 @@ class QuestTreeHUD(QWidget):
 
         # По щелчку мыши ничего пока не должно происходить у выбранного квеста при закрытом дереве
         event.ignore()
+
+    def contextMenuEvent(self, event) -> None:
+        """Контекстное меню (ПКМ) для копирования текста капель потока."""
+        if self._active_flow_id:
+            pt = event.pos()
+            for rect, drop in self._flow_drop_hitboxes:
+                if rect.contains(pt):
+                    menu = QMenu(self)
+                    menu.setStyleSheet("""
+                        QMenu {
+                            background-color: #0e1424;
+                            color: #fef08a;
+                            border: 1px solid rgba(254, 240, 138, 0.4);
+                            border-radius: 8px;
+                            padding: 4px;
+                            font-family: 'Georgia', serif;
+                        }
+                        QMenu::item {
+                            padding: 6px 20px;
+                            border-radius: 4px;
+                        }
+                        QMenu::item:selected {
+                            background-color: rgba(254, 240, 138, 0.15);
+                            color: #ffffff;
+                        }
+                    """)
+                    act_copy = menu.addAction("Скопировать текст мысли")
+                    chosen = menu.exec(event.globalPos())
+                    if chosen == act_copy:
+                        self._copy_flow_drop_text(drop)
+                    event.accept()
+                    return
+        super().contextMenuEvent(event)
 
     def wheelEvent(self, event) -> None:
         if self._active_flow_id:
@@ -2676,6 +2751,7 @@ class QuestTreeHUD(QWidget):
         self._draw_volumetric_branch(painter, right_pts, 3.2, 0.5, night)
 
         # 5. Отрисовка нанизанных капель ВНУТРЬ потока (исчезают у поворота ветвей y=240)
+        self._flow_drop_hitboxes.clear()
         y_turn = 240.0
         clip_rect = QRectF(0.0, y_turn, float(self.width()), float(self.height() - y_turn))
 
@@ -2705,6 +2781,11 @@ class QuestTreeHUD(QWidget):
                     continue
 
                 pt_node = self._flow_left_trunk_point(y_node)
+                r_av = 12.0
+                b_x = pt_node.x() + r_av + 22.0 + 4.0
+                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
+                self._flow_drop_hitboxes.append((bubble_rect, drop))
+
                 fade = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
 
                 painter.save()
@@ -2725,6 +2806,11 @@ class QuestTreeHUD(QWidget):
                     continue
 
                 pt_node = self._flow_right_trunk_point(y_node)
+                r_av = 12.0
+                b_x = pt_node.x() - r_av - 22.0 - 215.0 - 4.0
+                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
+                self._flow_drop_hitboxes.append((bubble_rect, drop))
+
                 fade = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
 
                 painter.save()
@@ -2975,6 +3061,27 @@ class QuestTreeHUD(QWidget):
         painter.setBrush(QBrush(bg_grad))
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
 
+        # Тонкая подсветка контура при наведении курсора
+        if self._hovered_flow_drop_id == drop.id:
+            hover_pen = QPen(QColor(254, 240, 138, 115) if not night else QColor(226, 232, 240, 110), 1.0)
+            painter.setPen(hover_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
+
+        # Значок копирования / индикатор "✔ Скопировано"
+        if self._copied_drop_id == drop.id:
+            font_badge = QFont("Georgia", 8, QFont.Bold)
+            painter.setFont(font_badge)
+            painter.setPen(QColor(34, 197, 94, 245) if night else QColor(254, 240, 138, 255))
+            badge_rect = QRectF(bubble_rect.right() - 95.0, bubble_rect.top() + 4.0, 88.0, 14.0)
+            painter.drawText(badge_rect, Qt.AlignRight | Qt.AlignVCenter, "✔ Скопировано")
+        elif self._hovered_flow_drop_id == drop.id:
+            font_badge = QFont("Georgia", 9)
+            painter.setFont(font_badge)
+            painter.setPen(QColor(254, 240, 138, 160) if not night else QColor(226, 232, 240, 160))
+            badge_rect = QRectF(bubble_rect.right() - 22.0, bubble_rect.top() + 4.0, 16.0, 14.0)
+            painter.drawText(badge_rect, Qt.AlignCenter, "⧉")
+
         font = QFont("Georgia", 11)
         painter.setFont(font)
         painter.setPen(text_color)
@@ -3105,6 +3212,27 @@ class QuestTreeHUD(QWidget):
             bg_grad.setColorAt(1.0, QColor(8, 12, 22, 205))
         painter.setBrush(QBrush(bg_grad))
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
+
+        # Тонкая подсветка контура при наведении курсора
+        if self._hovered_flow_drop_id == drop.id:
+            hover_pen = QPen(QColor(254, 240, 138, 115) if not night else QColor(226, 232, 240, 110), 1.0)
+            painter.setPen(hover_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
+
+        # Значок копирования / индикатор "✔ Скопировано"
+        if self._copied_drop_id == drop.id:
+            font_badge = QFont("Georgia", 8, QFont.Bold)
+            painter.setFont(font_badge)
+            painter.setPen(QColor(34, 197, 94, 245) if night else QColor(254, 240, 138, 255))
+            badge_rect = QRectF(bubble_rect.right() - 95.0, bubble_rect.top() + 4.0, 88.0, 14.0)
+            painter.drawText(badge_rect, Qt.AlignRight | Qt.AlignVCenter, "✔ Скопировано")
+        elif self._hovered_flow_drop_id == drop.id:
+            font_badge = QFont("Georgia", 9)
+            painter.setFont(font_badge)
+            painter.setPen(QColor(254, 240, 138, 160) if not night else QColor(226, 232, 240, 160))
+            badge_rect = QRectF(bubble_rect.right() - 22.0, bubble_rect.top() + 4.0, 16.0, 14.0)
+            painter.drawText(badge_rect, Qt.AlignCenter, "⧉")
 
         font = QFont("Georgia", 11)
         painter.setFont(font)
