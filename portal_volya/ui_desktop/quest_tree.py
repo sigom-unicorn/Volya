@@ -632,55 +632,61 @@ class QuestTreeHUD(QWidget):
         return math.hypot(pt.x() - c_btn.x(), pt.y() - c_btn.y()) <= 18.0
 
     def _flow_left_trunk_point(self, y: float) -> QPointF:
-        """Плавная органическая форма левой ветви потока (без прямых линий, с живыми изгибами!)."""
+        """Плавная органическая форма левой ветви потока (без прямых линий и без изломов!)."""
         c_spiral = self._flow_spiral_center
-        p_fork = QPointF(c_spiral.x(), 138.0)
+        p_fork = QPointF(c_spiral.x(), 102.0)
         x_base = 270.0
-        y_trans = 220.0
+        y_trans = 240.0
 
-        if y <= 138.0:
+        if y <= 102.0:
             return p_fork
         elif y < y_trans:
-            t = (y - 138.0) / (y_trans - 138.0)
+            t = (y - 102.0) / (y_trans - 102.0)
+            for _ in range(5):
+                u = 1.0 - t
+                yt = u**3 * 102.0 + 3.0*u**2*t * 147.0 + 3.0*u*t**2 * 175.0 + t**3 * 240.0
+                dy = 135.0*u**2 + 168.0*u*t + 195.0*t**2
+                if abs(dy) < 1e-6:
+                    break
+                t = max(0.0, min(1.0, t - (yt - y) / dy))
             u = 1.0 - t
-            p0 = p_fork
-            p1 = QPointF(c_spiral.x() - 15.0, 165.0)
-            p2 = QPointF(x_base + 40.0, 180.0)
-            p3 = QPointF(x_base, y_trans)
-            x = u**3 * p0.x() + 3.0*u**2*t * p1.x() + 3.0*u*t**2 * p2.x() + t**3 * p3.x()
+            x = u**3 * 520.0 + 3.0*u**2*t * 410.0 + 3.0*u*t**2 * 270.0 + t**3 * 270.0
             return QPointF(x, y)
         else:
             dy = y - y_trans
-            offset_x = 5.2 * math.sin(dy * 0.024) + 2.5 * math.sin(dy * 0.062)
+            offset_x = 5.0 * (1.0 - math.cos(dy * 0.035)) * math.sin(dy * 0.018)
             return QPointF(x_base + offset_x, y)
 
     def _flow_right_trunk_point(self, y: float) -> QPointF:
-        """Плавная органическая форма правой ветви потока (без прямых линий, с живыми изгибами!)."""
+        """Плавная органическая форма правой ветви потока (без прямых линий и без изломов!)."""
         c_spiral = self._flow_spiral_center
-        p_fork = QPointF(c_spiral.x(), 138.0)
+        p_fork = QPointF(c_spiral.x(), 102.0)
         x_base = 770.0
-        y_trans = 220.0
+        y_trans = 240.0
 
-        if y <= 138.0:
+        if y <= 102.0:
             return p_fork
         elif y < y_trans:
-            t = (y - 138.0) / (y_trans - 138.0)
+            t = (y - 102.0) / (y_trans - 102.0)
+            for _ in range(5):
+                u = 1.0 - t
+                yt = u**3 * 102.0 + 3.0*u**2*t * 147.0 + 3.0*u*t**2 * 175.0 + t**3 * 240.0
+                dy = 135.0*u**2 + 168.0*u*t + 195.0*t**2
+                if abs(dy) < 1e-6:
+                    break
+                t = max(0.0, min(1.0, t - (yt - y) / dy))
             u = 1.0 - t
-            p0 = p_fork
-            p1 = QPointF(c_spiral.x() + 15.0, 165.0)
-            p2 = QPointF(x_base - 40.0, 180.0)
-            p3 = QPointF(x_base, y_trans)
-            x = u**3 * p0.x() + 3.0*u**2*t * p1.x() + 3.0*u*t**2 * p2.x() + t**3 * p3.x()
+            x = u**3 * 520.0 + 3.0*u**2*t * 630.0 + 3.0*u*t**2 * 770.0 + t**3 * 770.0
             return QPointF(x, y)
         else:
             dy = y - y_trans
-            offset_x = -(5.2 * math.sin(dy * 0.024) + 2.5 * math.sin(dy * 0.062))
+            offset_x = -5.0 * (1.0 - math.cos(dy * 0.035)) * math.sin(dy * 0.018)
             return QPointF(x_base + offset_x, y)
 
     def _get_flow_drop_btn_center(self) -> QPointF:
         """Расчет позиции кнопки-капли на конце левой ветви (внизу всего потока)."""
-        y_cursor = 190.0 + self._flow_scroll_y
-        y_left_last = 175.0 + self._flow_scroll_y
+        y_cursor = 260.0 + self._flow_scroll_y
+        y_left_last = 250.0 + self._flow_scroll_y
 
         for drop in self._active_flow_drops:
             my_pk = self.node.identity.pubkey if hasattr(self.node, 'identity') and self.node.identity else ''
@@ -701,7 +707,7 @@ class QuestTreeHUD(QWidget):
                 y_pos = max(y_cursor, y_left_last + 26.0)
                 y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
 
-        y_btn = max(175.0 + self._flow_scroll_y + 40.0, y_cursor + 24.0)
+        y_btn = max(260.0 + self._flow_scroll_y + 40.0, y_cursor + 24.0)
         return self._flow_left_trunk_point(y_btn)
 
     # -------------------------------------------------------------
@@ -2609,16 +2615,15 @@ class QuestTreeHUD(QWidget):
         if self._flow_spiral_hovered and self._active_flow:
             self._draw_flow_spiral_tooltip(painter, c_spiral)
 
-        # 3. Стебель от нижнего полюса спирали вниз к развилке с живым изгибом
+        # 3. Стебель от нижнего полюса спирали вниз к развилке
         p_sp_bottom = QPointF(c_spiral.x(), c_spiral.y() + r_spiral)
-        p_fork = QPointF(c_spiral.x(), 138.0)
-        stem_pts = []
-        for i in range(25):
-            t = i / 24.0
-            y = p_sp_bottom.y() + (p_fork.y() - p_sp_bottom.y()) * t
-            off = 2.4 * math.sin((y - p_sp_bottom.y()) * 0.08)
-            stem_pts.append(QPointF(c_spiral.x() + off, y))
-        self._draw_volumetric_branch(painter, stem_pts, 2.8, 2.4, night)
+        p_fork = QPointF(c_spiral.x(), 102.0)
+        stem_pts = [
+            p_sp_bottom,
+            QPointF(c_spiral.x(), 97.0),
+            p_fork,
+        ]
+        self._draw_volumetric_branch(painter, stem_pts, 3.4, 3.2, night)
 
         # 4. Расчет положения левой и правой живых ветвей
         c_btn = self._get_flow_drop_btn_center()
@@ -2626,9 +2631,9 @@ class QuestTreeHUD(QWidget):
 
         # Построение живой органической левой ветви (без единой прямой линии!)
         y_left_tail = y_btn + 32.0
-        n_left = max(28, int((y_left_tail - 138.0) / 5.5))
+        n_left = max(32, int((y_left_tail - 102.0) / 5.0))
         left_pts = [
-            self._flow_left_trunk_point(138.0 + (y_left_tail - 138.0) * (i / n_left))
+            self._flow_left_trunk_point(102.0 + (y_left_tail - 102.0) * (i / n_left))
             for i in range(n_left + 1)
         ]
         # Постепенное природное утоньшение: 3.2px у развилки -> 0.7px на хвостике
@@ -2638,8 +2643,8 @@ class QuestTreeHUD(QWidget):
         self._draw_flow_drop_button(painter, c_btn, glow_color, core_color, night)
 
         # Расчет длины правой ветви (собеседники)
-        y_cursor = 190.0 + self._flow_scroll_y
-        y_right_last = 175.0 + self._flow_scroll_y
+        y_cursor = 260.0 + self._flow_scroll_y
+        y_right_last = 250.0 + self._flow_scroll_y
         for drop in self._active_flow_drops:
             my_pk = self.node.identity.pubkey if hasattr(self.node, 'identity') and self.node.identity else ''
             if my_pk and drop.author_pubkey:
@@ -2662,18 +2667,18 @@ class QuestTreeHUD(QWidget):
 
         # Построение живой органической правой ветви (без единой прямой линии!)
         y_right_tail = y_right_tip + 36.0
-        n_right = max(28, int((y_right_tail - 138.0) / 5.5))
+        n_right = max(32, int((y_right_tail - 102.0) / 5.0))
         right_pts = [
-            self._flow_right_trunk_point(138.0 + (y_right_tail - 138.0) * (i / n_right))
+            self._flow_right_trunk_point(102.0 + (y_right_tail - 102.0) * (i / n_right))
             for i in range(n_right + 1)
         ]
         # Постепенное природное утоньшение: 3.2px у развилки -> 0.5px на кончике
         self._draw_volumetric_branch(painter, right_pts, 3.2, 0.5, night)
 
         # 5. Отрисовка нанизанных капель ВНУТРЬ потока
-        y_c = 190.0 + self._flow_scroll_y
-        y_l_acc = 175.0 + self._flow_scroll_y
-        y_r_acc = 175.0 + self._flow_scroll_y
+        y_c = 260.0 + self._flow_scroll_y
+        y_l_acc = 250.0 + self._flow_scroll_y
+        y_r_acc = 250.0 + self._flow_scroll_y
 
         for drop in self._active_flow_drops:
             my_pk = self.node.identity.pubkey if hasattr(self.node, 'identity') and self.node.identity else ''
@@ -2847,22 +2852,64 @@ class QuestTreeHUD(QWidget):
         """Отрисовка капли игрока, нанизанной на левую ветвь."""
         painter.save()
         night = self.is_night()
+        r_av = 12.0
+        c_av = node_pt
 
-        # Светящийся узел на ветке
+        # Мягкое радиальное золотистое свечение вокруг аватарки
         painter.setPen(Qt.NoPen)
-        grad = QRadialGradient(node_pt, 7.0)
-        grad.setColorAt(0.0, QColor(254, 240, 138, 240))
-        grad.setColorAt(0.5, QColor(234, 179, 8, 120))
+        grad = QRadialGradient(c_av, r_av + 6.0)
+        grad.setColorAt(0.0, QColor(254, 240, 138, 220))
+        grad.setColorAt(0.65, QColor(234, 179, 8, 80))
         grad.setColorAt(1.0, QColor(234, 179, 8, 0))
         painter.setBrush(QBrush(grad))
-        painter.drawEllipse(node_pt, 7.0, 7.0)
+        painter.drawEllipse(c_av, r_av + 6.0, r_av + 6.0)
 
-        painter.setBrush(QColor(254, 240, 138, 255))
-        painter.drawEllipse(node_pt, 3.2, 3.2)
+        # Подложка аватарки игрока
+        painter.setBrush(QColor(18, 24, 40, 245))
+        painter.setPen(QPen(QColor(254, 240, 138, 220), 1.3))
+        painter.drawEllipse(c_av, r_av, r_av)
 
-        # Живая изогнутая веточка от узла на ветке ВНУТРЬ к тексту (с плавным утоньшением)
-        p_start = node_pt
-        p_end = QPointF(node_pt.x() + 22.0, node_pt.y() + 2.0)
+        # Отрисовка аватарки игрока/Сига
+        author_pk = drop.author_pubkey or (self.node.identity.pubkey if hasattr(self.node, 'identity') and self.node.identity else '')
+        author_name = drop.author_name or self.node.username or "Сиг"
+        pix = None
+        if author_pk and author_pk in self._player_avatar_cache:
+            pix = self._player_avatar_cache[author_pk]
+        elif author_pk:
+            raw_bytes = self.node.get_player_avatar_bytes(author_pk)
+            if raw_bytes:
+                pix = make_circular_pixmap(raw_bytes, 48)
+            else:
+                png = generate_default_avatar_png(author_name, size=48)
+                pix = make_circular_pixmap(png, 48)
+            self._player_avatar_cache[author_pk] = pix
+        else:
+            png = generate_default_avatar_png(author_name, size=48)
+            pix = make_circular_pixmap(png, 48)
+
+        if pix and not pix.isNull():
+            clip_path = QPainterPath()
+            clip_path.addEllipse(c_av, r_av, r_av)
+            painter.save()
+            painter.setClipPath(clip_path)
+            target_rect = QRectF(c_av.x() - r_av, c_av.y() - r_av, 2.0 * r_av, 2.0 * r_av)
+            painter.drawPixmap(target_rect.toRect(), pix)
+            painter.restore()
+        else:
+            font_initial = QFont("Georgia", 9, QFont.Bold)
+            painter.setFont(font_initial)
+            painter.setPen(QColor(254, 240, 138, 240))
+            name_char = (author_name or "С")[0].upper()
+            painter.drawText(QRectF(c_av.x() - r_av, c_av.y() - r_av, 2 * r_av, 2 * r_av), Qt.AlignCenter, name_char)
+
+        # Тонкий золотой ободок поверх
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(254, 240, 138, 220), 1.2))
+        painter.drawEllipse(c_av, r_av, r_av)
+
+        # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
+        p_start = QPointF(c_av.x() + r_av, c_av.y())
+        p_end = QPointF(p_start.x() + 22.0, p_start.y() + 2.0)
         twig_pts = self._sample_cubic_bezier(
             p_start,
             QPointF(p_start.x() + 7.0, p_start.y() + 5.0),
@@ -2933,7 +2980,32 @@ class QuestTreeHUD(QWidget):
         painter.setPen(QPen(QColor(226, 232, 240, 210), 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
 
-        if drop.author_name == "Эйра" or not drop.author_pubkey:
+        author_pk = drop.author_pubkey or ""
+        author_name = drop.author_name or "Эйра"
+        pix = None
+        if author_pk and author_pk in self._player_avatar_cache:
+            pix = self._player_avatar_cache[author_pk]
+        elif author_pk:
+            raw_bytes = self.node.get_player_avatar_bytes(author_pk)
+            if raw_bytes:
+                pix = make_circular_pixmap(raw_bytes, 48)
+            else:
+                png = generate_default_avatar_png(author_name, size=48)
+                pix = make_circular_pixmap(png, 48)
+            self._player_avatar_cache[author_pk] = pix
+        elif author_name != "Эйра":
+            png = generate_default_avatar_png(author_name, size=48)
+            pix = make_circular_pixmap(png, 48)
+
+        if pix and not pix.isNull():
+            clip_path = QPainterPath()
+            clip_path.addEllipse(c_av, r_av, r_av)
+            painter.save()
+            painter.setClipPath(clip_path)
+            target_rect = QRectF(c_av.x() - r_av, c_av.y() - r_av, 2.0 * r_av, 2.0 * r_av)
+            painter.drawPixmap(target_rect.toRect(), pix)
+            painter.restore()
+        elif author_name == "Эйра":
             pen_eira = QPen(QColor(56, 189, 248, 230), 1.3, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(pen_eira)
             painter.drawArc(QRectF(c_av.x() - 4.5, c_av.y() - 5.5, 6.0, 11.0), int(-70 * 16), int(140 * 16))
@@ -2942,8 +3014,13 @@ class QuestTreeHUD(QWidget):
             font_initial = QFont("Georgia", 9, QFont.Bold)
             painter.setFont(font_initial)
             painter.setPen(QColor(226, 232, 240, 240))
-            name_char = (drop.author_name or "И")[0].upper()
+            name_char = (author_name or "И")[0].upper()
             painter.drawText(QRectF(c_av.x() - r_av, c_av.y() - r_av, 2 * r_av, 2 * r_av), Qt.AlignCenter, name_char)
+
+        # Ободок поверх аватарки
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(226, 232, 240, 210), 1.2))
+        painter.drawEllipse(c_av, r_av, r_av)
 
         # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
         p_start = QPointF(c_av.x() - r_av, c_av.y())
