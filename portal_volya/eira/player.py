@@ -212,6 +212,3 @@ class EiraPlayer:
             prefix = f"{previous_summary}\n\n" if previous_summary else ""
             return prefix + "\n".join(lines[:5])
 
-
-# Сохраняем имя для полной совместимости:
-EiraAgent = EiraPlayer
