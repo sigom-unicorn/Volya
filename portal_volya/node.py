@@ -53,7 +53,7 @@ from portal_volya.ui_desktop.avatar_generator import (
     generate_default_avatar_png,
     process_custom_avatar_png,
 )
-from portal_volya.eira import EiraAgent, EiraReply
+from portal_volya.eira import EiraPlayer, EiraReply
 from portal_volya.storage.dag_store import DagStore
 from portal_volya.storage.identity import SovereignIdentity, get_or_create_identity
 
@@ -98,8 +98,8 @@ class VolyaNode:
         # Гарантируем наличие аватарки у активного игрока
         self._ensure_avatar_exists(self.identity.pubkey, self.identity.username)
 
-        # 3. Суверенный агент Эйры на локальном узле (нативный Google GenAI SDK)
-        self.eira = EiraAgent(
+        # 3. Суверенный вольный игрок Эйра на локальном узле (нативный Google GenAI SDK)
+        self.eira = EiraPlayer(
             store=self.dag_store,
         )
 

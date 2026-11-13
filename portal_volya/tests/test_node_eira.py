@@ -1,5 +1,5 @@
 """
-Тестирование связки суверенного узла VolyaNode и разумного агента Эйры (EiraAgent).
+Тестирование связки суверенного узла VolyaNode и разумного вольного игрока Эйры (EiraPlayer).
 """
 
 from datetime import datetime, timezone

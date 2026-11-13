@@ -1,5 +1,5 @@
 """
-Тестирование суверенных инструментов (EiraTools) и агента Эйры (EiraAgent).
+Тестирование суверенных инструментов (EiraTools) и вольного игрока Эйры (EiraPlayer).
 """
 
 from pathlib import Path
@@ -9,7 +9,7 @@ import pytest
 
 from portal_volya.core.crypto import KeyPair
 from portal_volya.core.genesis import ensure_genesis_tree
-from portal_volya.eira import EiraAgent, EiraTools
+from portal_volya.eira import EiraPlayer, EiraTools
 from portal_volya.storage.dag_store import DagStore
 
 
@@ -98,17 +98,17 @@ def test_list_tree_branches_tool(temp_node_with_genesis):
     assert "Ветви, растущие от квеста" in branches
 
 
-def test_eira_agent_init_and_tools_list(temp_node_with_genesis):
-    """Проверка инициализации EiraAgent и интеграции с EiraTools."""
+def test_eira_player_init_and_tools_list(temp_node_with_genesis):
+    """Проверка инициализации EiraPlayer и интеграции с EiraTools."""
     store, _, _, _ = temp_node_with_genesis
 
     import os
-    agent = EiraAgent(store=store)
-    assert agent.api_key == os.getenv("GOOGLE_API_KEY")
-    assert len(agent.tools.as_list()) >= 7
+    player = EiraPlayer(store=store)
+    assert player.api_key == os.getenv("GOOGLE_API_KEY")
+    assert len(player.tools.as_list()) >= 7
 
     # Проверка вызова диспетчера инструментов
-    res = agent.tools.execute_tool("get_kon_concept", {"term": "Лад"})
+    res = player.tools.execute_tool("get_kon_concept", {"term": "Лад"})
     assert "Условие, которое по душе всем участникам" in res
 
 
