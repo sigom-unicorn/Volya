@@ -97,27 +97,34 @@ class EtherealDropItem(QWidget):
         lbl_time.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lbl_time.setStyleSheet("font-size: 10px; color: rgba(255, 255, 255, 0.42); font-family: sans-serif;")
 
+        # Цвета в ладу с суточным циклом (днем - золотистые, ночью - лунные)
+        text_color = "#fef08a" if not self.is_night else "#f1f5f9"
+        time_color = "rgba(254, 240, 138, 0.68)" if not self.is_night else "rgba(148, 163, 184, 0.70)"
+        bg_bubble = "rgba(18, 26, 44, 0.78)" if not self.is_night else "rgba(14, 20, 36, 0.78)"
+
+        lbl_content.setStyleSheet(f"""
+            font-family: 'Georgia', serif;
+            font-size: 13.5px;
+            color: {text_color};
+            line-height: 1.45;
+            background: transparent;
+        """)
+        lbl_time.setStyleSheet(f"font-size: 10px; color: {time_color}; font-family: sans-serif;")
+        bubble.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_bubble};
+                border-radius: 12px;
+            }}
+        """)
+
         if self.is_mine:
-            # Своя капля (справа, золотистый эфир)
+            # Своя капля (справа)
             main_layout.addStretch(1)
-            lbl_content.setStyleSheet("""
-                font-family: 'Georgia', serif;
-                font-size: 13.5px;
-                color: #fef08a;
-                line-height: 1.45;
-                background: transparent;
-            """)
-            bubble.setStyleSheet("""
-                QFrame {
-                    background: rgba(234, 179, 8, 0.08);
-                    border-radius: 12px;
-                }
-            """)
             bubble_layout.addWidget(lbl_content)
             bubble_layout.addWidget(lbl_time)
             main_layout.addWidget(bubble, 0)
         else:
-            # Чужая капля / Эйра (слева, лунно-серебристый эфир с аватаркой)
+            # Чужая капля / Эйра (слева с аватаркой)
             avatar_lbl = QLabel(self)
             avatar_lbl.setFixedSize(32, 32)
             if self.avatar_pixmap and not self.avatar_pixmap.isNull():
@@ -128,20 +135,6 @@ class EtherealDropItem(QWidget):
                 avatar_lbl.setPixmap(pix)
 
             main_layout.addWidget(avatar_lbl, 0, Qt.AlignTop)
-
-            lbl_content.setStyleSheet("""
-                font-family: 'Georgia', serif;
-                font-size: 13.5px;
-                color: #f1f5f9;
-                line-height: 1.45;
-                background: transparent;
-            """)
-            bubble.setStyleSheet("""
-                QFrame {
-                    background: rgba(255, 255, 255, 0.07);
-                    border-radius: 12px;
-                }
-            """)
             bubble_layout.addWidget(lbl_content)
             bubble_layout.addWidget(lbl_time)
             main_layout.addWidget(bubble, 0)

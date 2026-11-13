@@ -15,6 +15,12 @@ from portal_volya.core.models import Quest
 if TYPE_CHECKING:
     from portal_volya.storage.dag_store import DagStore
 
+_CURRENT_EIRA_TOOLS_INSTANCE: Optional[EiraTools] = None
+
+
+def _get_active_eira_tools() -> Optional[EiraTools]:
+    return _CURRENT_EIRA_TOOLS_INSTANCE
+
 
 class EiraTools:
     """Набор суверенных инструментов Эйры для взаимодействия с Вольным Древом."""
@@ -24,8 +30,17 @@ class EiraTools:
         store: DagStore,
         embedder: Optional[Callable[[str], list[float]]] = None,
     ) -> None:
+        global _CURRENT_EIRA_TOOLS_INSTANCE
         self.store = store
         self.embedder = embedder
+        _CURRENT_EIRA_TOOLS_INSTANCE = self
+
+    def __reduce__(self) -> tuple:
+        """Позволяет без сбоев сериализовать/копировать связанные методы Эйры для Google GenAI SDK."""
+        return (_get_active_eira_tools, ())
+
+    def __deepcopy__(self, memo: dict) -> EiraTools:
+        return self
 
     def get_embedding(self, text: str) -> list[float]:
         """Вычисление семантического эмбеддинга текста через подключённый embedder."""

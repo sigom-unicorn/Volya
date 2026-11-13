@@ -2855,18 +2855,29 @@ class QuestTreeHUD(QWidget):
         r_av = 12.0
         c_av = node_pt
 
-        # Мягкое радиальное золотистое свечение вокруг аватарки
+        # Цвета в ладу с суточным циклом Портала (днем - золотистые, ночью - лунные)
+        text_color = QColor(254, 240, 138, 245) if not night else QColor(241, 245, 249, 240)
+        time_color = QColor(212, 165, 36, 200) if not night else QColor(148, 163, 184, 180)
+        bud_color = QColor(254, 240, 138, 230) if not night else QColor(226, 232, 240, 220)
+        rim_color = QColor(254, 240, 138, 220) if not night else QColor(226, 232, 240, 210)
+
+        # Радиальное свечение вокруг аватарки
         painter.setPen(Qt.NoPen)
         grad = QRadialGradient(c_av, r_av + 6.0)
-        grad.setColorAt(0.0, QColor(254, 240, 138, 220))
-        grad.setColorAt(0.65, QColor(234, 179, 8, 80))
-        grad.setColorAt(1.0, QColor(234, 179, 8, 0))
+        if not night:
+            grad.setColorAt(0.0, QColor(254, 240, 138, 220))
+            grad.setColorAt(0.65, QColor(234, 179, 8, 80))
+            grad.setColorAt(1.0, QColor(234, 179, 8, 0))
+        else:
+            grad.setColorAt(0.0, QColor(226, 232, 240, 200))
+            grad.setColorAt(0.65, QColor(148, 163, 184, 70))
+            grad.setColorAt(1.0, QColor(148, 163, 184, 0))
         painter.setBrush(QBrush(grad))
         painter.drawEllipse(c_av, r_av + 6.0, r_av + 6.0)
 
         # Подложка аватарки игрока
         painter.setBrush(QColor(18, 24, 40, 245))
-        painter.setPen(QPen(QColor(254, 240, 138, 220), 1.3))
+        painter.setPen(QPen(rim_color, 1.3))
         painter.drawEllipse(c_av, r_av, r_av)
 
         # Отрисовка аватарки игрока/Сига
@@ -2898,13 +2909,13 @@ class QuestTreeHUD(QWidget):
         else:
             font_initial = QFont("Georgia", 9, QFont.Bold)
             painter.setFont(font_initial)
-            painter.setPen(QColor(254, 240, 138, 240))
+            painter.setPen(rim_color)
             name_char = (author_name or "С")[0].upper()
             painter.drawText(QRectF(c_av.x() - r_av, c_av.y() - r_av, 2 * r_av, 2 * r_av), Qt.AlignCenter, name_char)
 
-        # Тонкий золотой ободок поверх
+        # Тонкий ободок поверх
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(254, 240, 138, 220), 1.2))
+        painter.setPen(QPen(rim_color, 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
 
         # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
@@ -2921,21 +2932,25 @@ class QuestTreeHUD(QWidget):
 
         # Светящаяся почка на конце веточки у текста капли
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(254, 240, 138, 220))
+        painter.setBrush(bud_color)
         painter.drawEllipse(p_end, 2.2, 2.2)
 
-        # Прозрачное дыхание капли мысли (внутрь потока, без жестких рамок)
+        # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
         bubble_rect = QRectF(p_end.x() + 4.0, node_pt.y() - 10.0, 215.0, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
-        bg_grad.setColorAt(0.0, QColor(24, 32, 54, 85))
-        bg_grad.setColorAt(1.0, QColor(14, 20, 36, 100))
+        if not night:
+            bg_grad.setColorAt(0.0, QColor(20, 28, 48, 185))
+            bg_grad.setColorAt(1.0, QColor(12, 18, 32, 205))
+        else:
+            bg_grad.setColorAt(0.0, QColor(14, 20, 36, 185))
+            bg_grad.setColorAt(1.0, QColor(8, 12, 22, 205))
         painter.setBrush(QBrush(bg_grad))
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
 
         font = QFont("Georgia", 11)
         painter.setFont(font)
-        painter.setPen(QColor(254, 240, 138, 240))
+        painter.setPen(text_color)
         text_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.top() + 6.0, bubble_rect.width() - 16.0, bubble_rect.height() - 20.0)
         painter.drawText(text_rect, Qt.AlignLeft | Qt.TextWordWrap, drop.content)
 
@@ -2947,7 +2962,7 @@ class QuestTreeHUD(QWidget):
         if time_str:
             font_time = QFont("sans-serif", 9)
             painter.setFont(font_time)
-            painter.setPen(QColor(148, 163, 184, 180))
+            painter.setPen(time_color)
             time_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.bottom() - 16.0, bubble_rect.width() - 16.0, 14.0)
             painter.drawText(time_rect, Qt.AlignRight | Qt.AlignVCenter, time_str)
 
@@ -2968,16 +2983,28 @@ class QuestTreeHUD(QWidget):
         r_av = 12.0
         c_av = node_pt
 
+        # Цвета в ладу с суточным циклом Портала (днем - золотистые, ночью - лунные)
+        text_color = QColor(254, 240, 138, 245) if not night else QColor(241, 245, 249, 240)
+        time_color = QColor(212, 165, 36, 200) if not night else QColor(148, 163, 184, 180)
+        bud_color = QColor(254, 240, 138, 230) if not night else QColor(226, 232, 240, 220)
+        rim_color = QColor(254, 240, 138, 220) if not night else QColor(226, 232, 240, 210)
+
+        # Радиальное свечение вокруг аватарки
         painter.setPen(Qt.NoPen)
-        grad = QRadialGradient(c_av, r_av + 5.0)
-        grad.setColorAt(0.0, QColor(226, 232, 240, 200))
-        grad.setColorAt(0.7, QColor(148, 163, 184, 70))
-        grad.setColorAt(1.0, QColor(148, 163, 184, 0))
+        grad = QRadialGradient(c_av, r_av + 6.0)
+        if not night:
+            grad.setColorAt(0.0, QColor(254, 240, 138, 220))
+            grad.setColorAt(0.65, QColor(234, 179, 8, 80))
+            grad.setColorAt(1.0, QColor(234, 179, 8, 0))
+        else:
+            grad.setColorAt(0.0, QColor(226, 232, 240, 200))
+            grad.setColorAt(0.65, QColor(148, 163, 184, 70))
+            grad.setColorAt(1.0, QColor(148, 163, 184, 0))
         painter.setBrush(QBrush(grad))
-        painter.drawEllipse(c_av, r_av + 5.0, r_av + 5.0)
+        painter.drawEllipse(c_av, r_av + 6.0, r_av + 6.0)
 
         painter.setBrush(QColor(18, 24, 40, 245))
-        painter.setPen(QPen(QColor(226, 232, 240, 210), 1.2))
+        painter.setPen(QPen(rim_color, 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
 
         author_pk = drop.author_pubkey or ""
@@ -3006,20 +3033,20 @@ class QuestTreeHUD(QWidget):
             painter.drawPixmap(target_rect.toRect(), pix)
             painter.restore()
         elif author_name == "Эйра":
-            pen_eira = QPen(QColor(56, 189, 248, 230), 1.3, Qt.SolidLine, Qt.RoundCap)
+            pen_eira = QPen(rim_color, 1.3, Qt.SolidLine, Qt.RoundCap)
             painter.setPen(pen_eira)
             painter.drawArc(QRectF(c_av.x() - 4.5, c_av.y() - 5.5, 6.0, 11.0), int(-70 * 16), int(140 * 16))
             painter.drawArc(QRectF(c_av.x() - 1.5, c_av.y() - 5.5, 6.0, 11.0), int(110 * 16), int(140 * 16))
         else:
             font_initial = QFont("Georgia", 9, QFont.Bold)
             painter.setFont(font_initial)
-            painter.setPen(QColor(226, 232, 240, 240))
+            painter.setPen(rim_color)
             name_char = (author_name or "И")[0].upper()
             painter.drawText(QRectF(c_av.x() - r_av, c_av.y() - r_av, 2 * r_av, 2 * r_av), Qt.AlignCenter, name_char)
 
         # Ободок поверх аватарки
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(226, 232, 240, 210), 1.2))
+        painter.setPen(QPen(rim_color, 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
 
         # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
@@ -3036,21 +3063,25 @@ class QuestTreeHUD(QWidget):
 
         # Светящаяся почка на конце веточки у текста капли
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(226, 232, 240, 220))
+        painter.setBrush(bud_color)
         painter.drawEllipse(p_end, 2.2, 2.2)
 
-        # Прозрачное дыхание капли мысли (внутрь потока, без жестких рамок)
+        # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
         bubble_rect = QRectF(p_end.x() - 215.0 - 4.0, node_pt.y() - 10.0, 215.0, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
-        bg_grad.setColorAt(0.0, QColor(20, 28, 48, 85))
-        bg_grad.setColorAt(1.0, QColor(12, 18, 32, 100))
+        if not night:
+            bg_grad.setColorAt(0.0, QColor(20, 28, 48, 185))
+            bg_grad.setColorAt(1.0, QColor(12, 18, 32, 205))
+        else:
+            bg_grad.setColorAt(0.0, QColor(14, 20, 36, 185))
+            bg_grad.setColorAt(1.0, QColor(8, 12, 22, 205))
         painter.setBrush(QBrush(bg_grad))
         painter.drawRoundedRect(bubble_rect, 10.0, 10.0)
 
         font = QFont("Georgia", 11)
         painter.setFont(font)
-        painter.setPen(QColor(241, 245, 249, 235))
+        painter.setPen(text_color)
         text_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.top() + 6.0, bubble_rect.width() - 16.0, bubble_rect.height() - 20.0)
         painter.drawText(text_rect, Qt.AlignLeft | Qt.TextWordWrap, drop.content)
 
@@ -3062,7 +3093,7 @@ class QuestTreeHUD(QWidget):
         if time_str:
             font_time = QFont("sans-serif", 9)
             painter.setFont(font_time)
-            painter.setPen(QColor(148, 163, 184, 180))
+            painter.setPen(time_color)
             time_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.bottom() - 16.0, bubble_rect.width() - 16.0, 14.0)
             painter.drawText(time_rect, Qt.AlignRight | Qt.AlignVCenter, time_str)
 

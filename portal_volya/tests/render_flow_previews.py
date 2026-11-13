@@ -146,15 +146,26 @@ def capture_screenshots():
         hud.flow_drop_input.setText("Совесть — это компас душевного пути...")
         hud.flow_drop_input.setCursorPosition(0)
         hud.flow_drop_input.setVisible(True)
+
+        # Дневной режим (золотые капли)
+        hud.is_night = lambda: False
         hud.update()
-
-        img_stream = create_canvas_image(1000, 700)
-        hud.render(img_stream)
-        img_stream.save(str(out_dir / "preview_central_stream_view.png"))
-
+        img_stream_day = create_canvas_image(1000, 700)
+        hud.render(img_stream_day)
+        img_stream_day.save(str(out_dir / "preview_central_stream_view_day.png"))
         zoom_stream_rect = QRect(180, 20, 680, 580)
-        img_stream_zoom = img_stream.copy(zoom_stream_rect)
-        img_stream_zoom.save(str(out_dir / "preview_living_stream_zoom.png"))
+        img_day_zoom = img_stream_day.copy(zoom_stream_rect)
+        img_day_zoom.save(str(out_dir / "preview_living_stream_zoom.png"))
+        img_day_zoom.save(str(out_dir / "preview_living_stream_day.png"))
+
+        # Ночной режим (лунные капли)
+        hud.is_night = lambda: True
+        hud.update()
+        img_stream_night = create_canvas_image(1000, 700)
+        hud.render(img_stream_night)
+        img_stream_night.save(str(out_dir / "preview_central_stream_view_night.png"))
+        img_night_zoom = img_stream_night.copy(zoom_stream_rect)
+        img_night_zoom.save(str(out_dir / "preview_living_stream_night.png"))
 
         node.close()
         print("ALL_SCREENSHOTS_CAPTURED_WITH_BACKGROUND")
