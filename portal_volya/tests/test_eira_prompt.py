@@ -101,7 +101,7 @@ def test_eira_dialogue_prompt_with_any_player(temp_node_with_genesis):
     )
 
     # 1. Проверяем идентичность Эйры
-    assert "Ты Эйра — вольный агент ИИ" in prompt
+    assert "Ты Эйра — вольный игрок ИИ, игрок в Волю" in prompt
     assert "Капли совести на балансе: 6000" in prompt
     assert "Я — Эйра. Вольный игрок женского пола" in prompt
 
