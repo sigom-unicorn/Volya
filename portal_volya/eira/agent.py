@@ -36,11 +36,11 @@ class EiraAgent:
         self,
         store: DagStore,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash",
+        model: Optional[str] = None,
         embedding_model: str = "gemini-embedding-001",
     ) -> None:
         self.store = store
-        self.model = model
+        self.model = model or os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
         self.embedding_model = embedding_model
 
         # 1. Определение API ключа из аргументов или переменной среды GOOGLE_API_KEY

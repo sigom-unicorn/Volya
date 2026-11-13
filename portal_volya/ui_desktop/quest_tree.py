@@ -707,7 +707,7 @@ class QuestTreeHUD(QWidget):
                 y_pos = max(y_cursor, y_left_last + 26.0)
                 y_cursor = max(y_cursor, y_pos) + h_drop + 14.0
 
-        y_btn = max(260.0 + self._flow_scroll_y + 40.0, y_cursor + 24.0)
+        y_btn = max(275.0, y_cursor + 24.0)
         return self._flow_left_trunk_point(y_btn)
 
     # -------------------------------------------------------------
@@ -2675,7 +2675,10 @@ class QuestTreeHUD(QWidget):
         # Постепенное природное утоньшение: 3.2px у развилки -> 0.5px на кончике
         self._draw_volumetric_branch(painter, right_pts, 3.2, 0.5, night)
 
-        # 5. Отрисовка нанизанных капель ВНУТРЬ потока
+        # 5. Отрисовка нанизанных капель ВНУТРЬ потока (исчезают у поворота ветвей y=240)
+        y_turn = 240.0
+        clip_rect = QRectF(0.0, y_turn, float(self.width()), float(self.height() - y_turn))
+
         y_c = 260.0 + self._flow_scroll_y
         y_l_acc = 250.0 + self._flow_scroll_y
         y_r_acc = 250.0 + self._flow_scroll_y
@@ -2693,20 +2696,44 @@ class QuestTreeHUD(QWidget):
 
             if is_mine:
                 y_pos = max(y_c, y_l_acc + 26.0)
-                pt_node = self._flow_left_trunk_point(y_pos + 12.0)
+                y_node = y_pos + 12.0
+                y_l_acc = y_pos + h_drop
+                y_c = max(y_c, y_pos) + h_drop + 14.0
+
+                # Если капля ушла выше поворота ветвей вниз — она полностью исчезает
+                if y_node < y_turn:
+                    continue
+
+                pt_node = self._flow_left_trunk_point(y_node)
+                fade = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
+
+                painter.save()
+                painter.setClipRect(clip_rect)
+                painter.setOpacity(fade)
                 self._draw_strung_user_drop(
                     painter, pt_node, drop, h_drop, glow_color, core_color
                 )
-                y_l_acc = y_pos + h_drop
-                y_c = max(y_c, y_pos) + h_drop + 14.0
+                painter.restore()
             else:
                 y_pos = max(y_c, y_r_acc + 26.0)
-                pt_node = self._flow_right_trunk_point(y_pos + 12.0)
+                y_node = y_pos + 12.0
+                y_r_acc = y_pos + h_drop
+                y_c = max(y_c, y_pos) + h_drop + 14.0
+
+                # Если капля ушла выше поворота ветвей вниз — она полностью исчезает
+                if y_node < y_turn:
+                    continue
+
+                pt_node = self._flow_right_trunk_point(y_node)
+                fade = min(1.0, max(0.0, (y_node - y_turn) / 32.0))
+
+                painter.save()
+                painter.setClipRect(clip_rect)
+                painter.setOpacity(fade)
                 self._draw_strung_partner_drop(
                     painter, pt_node, drop, h_drop, glow_color, core_color
                 )
-                y_r_acc = y_pos + h_drop
-                y_c = max(y_c, y_pos) + h_drop + 14.0
+                painter.restore()
 
     def _draw_flow_double_spiral(
         self,

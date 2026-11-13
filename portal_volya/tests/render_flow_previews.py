@@ -167,6 +167,15 @@ def capture_screenshots():
         img_night_zoom = img_stream_night.copy(zoom_stream_rect)
         img_night_zoom.save(str(out_dir / "preview_living_stream_night.png"))
 
+        # Режим с прокруткой вверх: проверка исчезновения капель на повороте
+        hud._flow_scroll_y = -75.0
+        hud._position_flow_input()
+        hud.update()
+        img_scrolled = create_canvas_image(1000, 700)
+        hud.render(img_scrolled)
+        img_scrolled_zoom = img_scrolled.copy(zoom_stream_rect)
+        img_scrolled_zoom.save(str(out_dir / "preview_living_stream_scrolled_up.png"))
+
         node.close()
         print("ALL_SCREENSHOTS_CAPTURED_WITH_BACKGROUND")
 
