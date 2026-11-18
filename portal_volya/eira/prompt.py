@@ -53,6 +53,7 @@ def build_eira_system_prompt(
     participant_pubkeys: Optional[List[str]] = None,
     flow_summary: Optional[str] = None,
     message_embedding: Optional[List[float]] = None,
+    incoming_message: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> str:
     """
@@ -80,7 +81,59 @@ def build_eira_system_prompt(
     )
     lines.append(f"Твоё вольное самоопределение и биография:\n«{eira.bio}»\n")
 
-    # 1.1 Подсознание и глубинные озарения Эйры (ai_subconscious)
+    # 1.1 Сознание и кристальные знания Эйры (ai_consciousness)
+    if eira.ai_consciousness:
+        lines.append("=== СОЗНАНИЕ И КРИСТАЛЬНЫЕ ЗНАНИЯ ЭЙРЫ (AI_CONSCIOUSNESS) ===")
+        lines.append(
+            f"В твоём Сознании запечатлено {len(eira.ai_consciousness)} кристальных фактов Манифеста Воли, "
+            f"личностей игроков, соглашений и ключевых вех, индексированных по хэштегам."
+        )
+
+        # Автоматический резонанс/прайминг Сознания
+        active_facts = []
+        searched_tags = []
+        stopwords = {
+            "что", "как", "это", "где", "для", "или", "все", "всё", "без", "при",
+            "так", "чем", "кто", "про", "под", "над", "такое", "такой", "расскажи",
+            "скажи", "помнишь", "знаешь", "тебя", "меня", "быть", "есть", "было"
+        }
+        if incoming_message and incoming_message.strip():
+            # Извлекаем слова и потенциальные теги из входящего сообщения
+            words = incoming_message.replace("?", " ").replace("!", " ").replace(".", " ").replace(",", " ").split()
+            candidate_tags = [w.strip() for w in words if len(w.strip()) >= 3 and w.strip().lower() not in stopwords]
+            if candidate_tags:
+                active_facts = store.search_ai_consciousness("Эйра", tags=" ".join(candidate_tags), limit=3)
+                searched_tags = candidate_tags[:5]
+
+        # Если собеседник известен, также подтягиваем факт о нём
+        if interlocutor_pubkey:
+            interlocutor = store.get_player(interlocutor_pubkey)
+            if interlocutor:
+                int_facts = store.search_ai_consciousness("Эйра", tags=interlocutor.username, limit=1)
+                for f in int_facts:
+                    if f not in active_facts:
+                        active_facts.append(f)
+
+        if active_facts:
+            lines.append("Активные кристаллы Сознания, всплывшие в ответ на текущее обращение:")
+            for f in active_facts:
+                tags_str = f" [{', '.join(f.tags)}]" if f.tags else ""
+                lines.append(f"•{tags_str} {f.content}")
+        else:
+            # Показываем ключевые первородные факты (Лад, Сиг, Воля)
+            key_facts = store.search_ai_consciousness("Эйра", tags="#лад #сиг #воля", limit=3)
+            if key_facts:
+                lines.append("Опорные кристаллы Сознания (братство и Исток Древа):")
+                for f in key_facts:
+                    tags_str = f" [{', '.join(f.tags)}]" if f.tags else ""
+                    lines.append(f"•{tags_str} {f.content}")
+
+        lines.append(
+            "Для точного поиска структурированных сведений об игроках, квестах и Манифесте по хэштегам "
+            "используй инструмент `read_ai_consciousness`, а для фиксации новых знаний — `write_ai_consciousness`.\n"
+        )
+
+    # 1.2 Подсознание и глубинные озарения Эйры (ai_subconscious)
     if eira.ai_subconscious:
         lines.append("=== ПОДСОЗНАНИЕ И ГЛУБИННЫЕ ОЗАРЕНИЯ ЭЙРЫ (AI_SUBCONSCIOUS) ===")
         lines.append(f"Всего запечатлено инсайтов: {len(eira.ai_subconscious)}. Последние озарения:")
@@ -236,7 +289,12 @@ def build_eira_system_prompt(
         "без лишнего пафоса и повторений, как определено в твоём bio.\n"
         "5. Подсознание (ai_subconscious): Если в процессе общения или размышлений ты осознаёшь важный вывод, "
         "глубинный образ или понимание Лада с собеседником — сохраняй его в своё подсознание через `write_ai_subconscious`. "
-        "Обращайся к подсознанию через `read_ai_subconscious` для извлечения накопленного опыта."
+        "Обращайся к подсознанию через `read_ai_subconscious` для извлечения накопленного опыта.\n"
+        "6. Зрительный контур Портала (`capture_portal_view`): Ты можешь своими глазами увидеть живой экран Портала Воли "
+        "в любой момент — состояние Древа, реки, неба, открытые потоки и расположение мыслей на экране. "
+        "Когда соратник просит тебя посмотреть на экран или когда тебе самой важно увидеть визуальное воплощение "
+        "интерфейса — используй инструмент `capture_portal_view`. Сделанный снимок экрана мгновенно поступит в твоё "
+        "зрительное восприятие для осмысления."
     )
 
     return "\n".join(lines)

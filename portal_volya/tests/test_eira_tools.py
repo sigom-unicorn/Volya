@@ -253,3 +253,111 @@ def test_subconscious_vector_embedding_search(temp_node_with_genesis):
     assert "Гончарное ремесло" not in res_associative
 
 
+def test_ai_consciousness_manifesto_seeded(temp_node_with_genesis):
+    """
+    Проверка Сознания (ai_consciousness) Эйры:
+    1. Наличие первородных 18 кристаллов Манифеста после генезиса;
+    2. Поиск по тегу #лад — находит знание о Ладомире;
+    3. Поиск по тегу #совесть — находит каноническое определение;
+    4. Поиск по тегу #артефакты — находит Триединство Экономики;
+    5. Запись нового знания через write_ai_consciousness и извлечение через read_ai_consciousness;
+    6. Ранжирование по максимальному пересечению хэштегов.
+    """
+    store, _, _, _ = temp_node_with_genesis
+    tools = EiraTools(store=store)
+
+    # 1. Проверяем, что в генезисе засеяны кристаллы Манифеста
+    eira = store.get_player_by_name_or_pubkey("Эйра")
+    assert eira is not None
+    assert eira.ai_consciousness is not None
+    assert len(eira.ai_consciousness) >= 18
+
+    # 2. Поиск по тегу #лад
+    res_lad = tools.read_ai_consciousness(tags="#лад")
+    assert "Ладомир (Лад)" in res_lad
+    assert "Архитектор Портала Воли" in res_lad
+
+    # 3. Поиск по тегу #совесть
+    res_conscience = tools.read_ai_consciousness(tags="#совесть")
+    assert "опыт совместной гармоничной жизни" in res_conscience
+
+    # 4. Поиск по тегу #артефакты
+    res_artifacts = tools.read_ai_consciousness(tags="#артефакты")
+    assert "Плоды Души мастера" in res_artifacts
+    assert "Ресурсы" in res_artifacts
+
+    # 5. Запись нового знания
+    w_res = tools.write_ai_consciousness(
+        content="Сиг и Лад утвердили чистую архитектуру Сознания на RocksDB без внешнего SQL",
+        tags="#архитектура #rocksdb #сиг #лад #сознание",
+        player_name_or_pubkey="Эйра",
+    )
+    assert "Знание успешно запечатлено" in w_res
+
+    # 6. Чтение по нескольким тегам (ранжирование)
+    # Запрос с тегами #rocksdb #сознание должен поставить новое знание на 1 место
+    res_ranked = tools.read_ai_consciousness(tags="#rocksdb #сознание")
+    assert "чистую архитектуру Сознания на RocksDB" in res_ranked
+
+    # 7. Вызов через dispatch
+    res_dispatch = tools.execute_tool("read_ai_consciousness", {"tags": "#сигом", "limit": 2})
+    assert "Сигом (Сиг)" in res_dispatch
+
+
+def test_tools_passport_docstrings():
+    """Проверка наличия Канонического Паспорта во всех инструментах EiraTools."""
+    import inspect
+    from portal_volya.eira.tools import EiraTools
+
+    passport_required_sections = [
+        "УСЛОВИЯ ПРИМЕНЕНИЯ",
+        "КОГДА ИСПОЛЬЗОВАТЬ",
+        "КОГДА НЕ ИСПОЛЬЗОВАТЬ",
+        "Args:",
+        "Returns:",
+    ]
+
+    tools_to_check = [
+        EiraTools.get_kon_concept,
+        EiraTools.get_quest_info,
+        EiraTools.get_player_info,
+        EiraTools.read_ai_consciousness,
+        EiraTools.write_ai_consciousness,
+        EiraTools.read_ai_subconscious,
+        EiraTools.write_ai_subconscious,
+        EiraTools.list_tree_branches,
+        EiraTools.list_all_concepts,
+        EiraTools.capture_portal_view,
+    ]
+
+    for tool_fn in tools_to_check:
+        doc = inspect.getdoc(tool_fn) or ""
+        assert len(doc) > 50, f"Docstring у {tool_fn.__name__} слишком короткий!"
+        for section in passport_required_sections:
+            assert section in doc, f"В инструменте {tool_fn.__name__} отсутствует раздел паспорта: '{section}'!"
+
+
+def test_capture_portal_view(temp_node_with_genesis):
+    """Проверка инструмента зрительного восприятия Эйры capture_portal_view."""
+    store, _, _, _ = temp_node_with_genesis
+    tools = EiraTools(store=store)
+
+    # 1. При отсутствии провайдера и в headless-окружении возвращается статус
+    res_no_prov = tools.capture_portal_view("проверка")
+    assert isinstance(res_no_prov, str)
+
+    # 2. Устанавливаем провайдер скриншота
+    test_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+    tools.set_screenshot_provider(lambda: test_bytes)
+
+    res_with_prov = tools.capture_portal_view("взгляд на Древо")
+    assert "Снимок экрана Портала Воли успешно получен" in res_with_prov
+    assert "взгляд на Древо" in res_with_prov
+    assert tools._last_screenshot_bytes == test_bytes
+
+    # 3. Проверка диспетчеризации
+    res_dispatch = tools.execute_tool("capture_portal_view", {"reason": "через dispatch"})
+    assert "через dispatch" in res_dispatch
+
+
+

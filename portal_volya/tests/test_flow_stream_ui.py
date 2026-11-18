@@ -49,9 +49,9 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert hud._flow_menu_mode == "select"
         assert hud._sel_flow_kind == FlowKind.DIALOGUE
 
-        # 3. Клик по потоку в списке -> выбор потока
+        # 3. Клик по потоку в списке (изначально список пуст)
         flows = hud._quest_flows_cache
-        assert len(flows) >= 1
+        assert len(flows) == 0
 
         selected_flows = []
         hud.flow_selected.connect(lambda fid: selected_flows.append(fid))

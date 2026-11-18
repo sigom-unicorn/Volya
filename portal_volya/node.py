@@ -26,6 +26,7 @@ from portal_volya.core.genesis import (
     LADOMIR_SEED,
     SIGOM_SEED,
     derive_genesis_keypair,
+    ensure_initiation_quest,
 )
 from portal_volya.core.models import (
     AIMemory,
@@ -73,6 +74,14 @@ class VolyaNode:
         # 1. Менеджер суверенных игроков на устройстве (поддержка нескольких игроков)
         self.identities_mgr = DeviceIdentitiesManager(node_dir=self.node_dir)
 
+        # 2. Несокрушимая память Вольного Древа на RocksDB (Merkle DAG)
+        self.rocksdb_path = self.node_dir / "dag.rocksdb"
+        self.dag_store = DagStore(db_path=self.rocksdb_path)
+        self.dag_store.ensure_genesis_tree()
+
+        # Автоматическая сверка и очистка фантомных/тестовых игроков устройства с базой Древа
+        self.identities_mgr.reconcile_with_store(self.dag_store)
+
         if identity is not None:
             self.identity = identity
         else:
@@ -89,11 +98,6 @@ class VolyaNode:
                     identity_file="identity.json",
                     default_username=default_username,
                 )
-
-        # 2. Несокрушимая память Вольного Древа на RocksDB (Merkle DAG)
-        self.rocksdb_path = self.node_dir / "dag.rocksdb"
-        self.dag_store = DagStore(db_path=self.rocksdb_path)
-        self.dag_store.ensure_genesis_tree()
 
         # Гарантируем наличие аватарки у активного игрока
         self._ensure_avatar_exists(self.identity.pubkey, self.identity.username)
@@ -220,6 +224,16 @@ class VolyaNode:
             avatar_bytes = generate_default_avatar_png(dev_id.username, dev_id.pubkey)
 
         avatar_hash = self.dag_store.put_blob(avatar_bytes)
+
+        # Динамически проращиваем квест Посвящения в Древе при приходе Неофита
+        ensure_initiation_quest(self.dag_store, root_quest_id="quest-volya-root")
+        eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
+        self.dag_store.assign_player_role(
+            pubkey=eira_pk,
+            quest_id="quest-posvyashchenie",
+            role_title="Проводник",
+            assigned_at=now,
+        )
 
         # Создание объекта Игрока
         player = Player(

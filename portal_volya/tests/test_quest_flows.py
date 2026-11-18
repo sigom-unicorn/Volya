@@ -20,12 +20,9 @@ def test_quest_flow_storage_and_defaults():
         store = DagStore(db_path=db_path)
         store.ensure_genesis_tree()
 
-        # 1. Запрос потоков для квеста «Воля» — автоматически создаётся каноническая беседа
+        # 1. Запрос потоков для квеста «Воля» — изначально список пуст
         flows = store.get_quest_flows("quest-volya-root")
-        assert len(flows) >= 1
-        default_f = flows[0]
-        assert default_f.quest_id == "quest-volya-root"
-        assert default_f.kind == FlowKind.CONVERSATION
+        assert len(flows) == 0
 
         # 2. Создание нового диалога
         new_flow = QuestFlow(
@@ -46,7 +43,7 @@ def test_quest_flow_storage_and_defaults():
         assert loaded.kind == FlowKind.DIALOGUE
 
         all_q_flows = store.get_quest_flows("quest-volya-root")
-        assert len(all_q_flows) == 2
+        assert len(all_q_flows) == 1
 
         # 3. Проверка get_quest_players — Эйра всегда первая!
         players = store.get_quest_players("quest-volya-root")

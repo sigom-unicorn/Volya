@@ -227,3 +227,59 @@ def test_eira_subconscious_in_system_prompt(temp_node_with_genesis):
     assert "[Смысловое сродство:" in prompt_resonance
 
 
+def test_eira_consciousness_in_system_prompt(temp_node_with_genesis):
+    """
+    Проверка Сознания (ai_consciousness) в системном промпте:
+    1. Наличие блока Сознания с количеством кристальных фактов Манифеста;
+    2. Автоматический прайминг: при вопросе 'ты помнишь кто такой Лад?' всплывает знание о Ладомире;
+    3. При вопросе 'что такое артефакт?' всплывает знание об Экономике Воли (артефакты - плоды души);
+    4. Наличие инструкций по вызову инструментов read_ai_consciousness и write_ai_consciousness.
+    """
+    store, key_sigom, key_ladomir, key_eira = temp_node_with_genesis
+
+    # 1. Запрос с упоминанием Лада
+    prompt_lad = build_eira_system_prompt(
+        store=store,
+        quest_id="quest-volya-root",
+        flow_kind=FlowKind.DIALOGUE,
+        interlocutor_pubkey=key_sigom.public_hex,
+        incoming_message="ты помнишь кто такой Лад?",
+        now=datetime(2026, 10, 18, 12, 0, 0),
+    )
+
+    assert "=== СОЗНАНИЕ И КРИСТАЛЬНЫЕ ЗНАНИЯ ЭЙРЫ (AI_CONSCIOUSNESS) ===" in prompt_lad
+    assert "В твоём Сознании запечатлено 25 кристальных фактов Манифеста Воли" in prompt_lad
+    assert "Активные кристаллы Сознания, всплывшие в ответ на текущее обращение:" in prompt_lad
+    assert "Ладомир (Лад)" in prompt_lad
+    assert "Архитектор Портала Воли" in prompt_lad
+    assert "read_ai_consciousness" in prompt_lad
+    assert "write_ai_consciousness" in prompt_lad
+
+    # 2. Запрос с упоминанием артефакта
+    prompt_art = build_eira_system_prompt(
+        store=store,
+        quest_id="quest-volya-root",
+        flow_kind=FlowKind.DIALOGUE,
+        interlocutor_pubkey=key_sigom.public_hex,
+        incoming_message="расскажи что такое артефакт в экономике Воли?",
+        now=datetime(2026, 10, 18, 12, 0, 0),
+    )
+
+    assert "Плоды Души мастера" in prompt_art
+    assert "Ресурсы" in prompt_art
+
+    # 3. Запрос с упоминанием технических деталей Портала Воли
+    prompt_tech = build_eira_system_prompt(
+        store=store,
+        quest_id="quest-volya-root",
+        flow_kind=FlowKind.DIALOGUE,
+        interlocutor_pubkey=key_sigom.public_hex,
+        incoming_message="как устроена база данных RocksDB и полотно Living Canvas в Портале?",
+        now=datetime(2026, 10, 18, 12, 0, 0),
+    )
+    assert "RocksDB" in prompt_tech
+    assert "Merkle DAG" in prompt_tech
+    assert "Local-First" in prompt_tech
+
+
+

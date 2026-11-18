@@ -186,6 +186,17 @@ class AIMemory(BaseModel):
     created_at: str
 
 
+class AIConsciousFact(BaseModel):
+    """
+    Кристальный факт в Сознании (ai_consciousness) разумного искусственного существа.
+    Хранит структурированные знания, индексированные строго по тегам/хэштегам (#лад, #манифест, #совесть).
+    """
+    id: str                                                 # Blake3 хэш факта
+    content: str                                            # Текст знания/факта
+    tags: list[str] = Field(default_factory=list)          # Список хэштегов/меток
+    created_at: str
+
+
 class PlayerRoleAssignment(BaseModel):
     """Назначение роли игроку внутри квеста."""
     quest_id: str
@@ -201,7 +212,8 @@ class Player(BaseModel):
     bio: str = ""
     avatar_hash: Optional[str] = None                       # Blake3 хэш аватарки в хранилище блобов
     roles: list[PlayerRoleAssignment] = Field(default_factory=list) # Назначенные роли игрока в квестах
-    ai_subconscious: Optional[list[AIMemory]] = None        # Личное подсознание (только для игроков ИИ)
+    ai_subconscious: Optional[list[AIMemory]] = None        # Личное подсознание (векторы, смысловые ассоциации)
+    ai_consciousness: Optional[list[AIConsciousFact]] = None # Личное сознание (структурированные знания, хэштеги)
     created_at: str
 
 
@@ -252,6 +264,7 @@ __all__ = [
     "Player",
     "PlayerRoleAssignment",
     "AIMemory",
+    "AIConsciousFact",
     # Merkle DAG
     "DagNodeType",
     "DagNode",

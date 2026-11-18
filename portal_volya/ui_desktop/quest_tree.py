@@ -298,27 +298,28 @@ class QuestTreeHUD(QWidget):
         self._active_flow_id: Optional[str] = None
         self._active_flow: Optional[QuestFlow] = None
         self._active_flow_drops: list[FlowDrop] = []
-        self._flow_spiral_center = QPointF(520.0, 72.0)
+        self._flow_spiral_center = QPointF(540.0, 72.0)
         self._flow_spiral_radius = 20.0
         self._flow_spiral_hovered: bool = False
         self._flow_drop_btn_hovered: bool = False
         self._flow_scroll_y: float = 0.0
         self._flow_input_active: bool = False
+        self._flow_drop_width: float = 524.0
 
-        # Поле ввода новой капли на левой ветви (рядом с кнопкой-каплей)
+        # Поле ввода новой капли на левой ветви (рядом с кнопкой-каплей на всю ширину потока)
         self.flow_drop_input = QLineEdit(self)
         self.flow_drop_input.setPlaceholderText("Капля мысли в поток...")
-        self.flow_drop_input.setFixedHeight(26)
-        self.flow_drop_input.setFixedWidth(215)
+        self.flow_drop_input.setFixedHeight(28)
+        self.flow_drop_input.setFixedWidth(524)
         self.flow_drop_input.setStyleSheet("""
             QLineEdit {
                 background: rgba(14, 20, 36, 0.94);
                 border: 1.5px solid rgba(254, 240, 138, 0.60);
-                border-radius: 13px;
-                padding: 2px 28px 2px 10px;
+                border-radius: 14px;
+                padding: 2px 30px 2px 12px;
                 color: #FEF08A;
                 font-family: 'Georgia', serif;
-                font-size: 11px;
+                font-size: 12px;
             }
             QLineEdit:focus {
                 border: 1.5px solid rgba(254, 240, 138, 0.95);
@@ -346,7 +347,7 @@ class QuestTreeHUD(QWidget):
                 border: 1px solid rgba(254, 240, 138, 0.95);
             }
         """)
-        self.flow_drop_submit_btn.move(215, 3)
+        self.flow_drop_submit_btn.move(500, 4)
         self.flow_drop_submit_btn.clicked.connect(self._submit_new_flow_drop)
 
         # Таймер плавного закрытия меню потоков при уходе мыши
@@ -599,12 +600,25 @@ class QuestTreeHUD(QWidget):
         self.update()
 
     def _position_flow_input(self) -> None:
-        """Позиционирование поля ввода капли справа от кнопки-капли (внутрь потока)."""
+        """Позиционирование поля ввода капли справа от кнопки-капли (внутрь потока на всю ширину)."""
         c_btn = self._get_flow_drop_btn_center()
-        self.flow_drop_input.setGeometry(int(c_btn.x() + 20.0), int(c_btn.y() - 13.0), 215, 26)
+        pt_right = self._flow_right_trunk_point(c_btn.y())
+        input_w = max(240, int(pt_right.x() - 12.0 - 26.0 - (c_btn.x() + 24.0)))
+        self.flow_drop_input.setFixedWidth(input_w)
+        self.flow_drop_input.setGeometry(int(c_btn.x() + 24.0), int(c_btn.y() - 14.0), input_w, 28)
         self.flow_drop_submit_btn.move(
-            self.flow_drop_input.width() - 23, (self.flow_drop_input.height() - 20) // 2
+            input_w - 24, (self.flow_drop_input.height() - 20) // 2
         )
+
+    def _calculate_drop_bubble_height(self, content: str, bubble_width: float = 524.0) -> float:
+        """Точный расчет высоты капли мысли на базе QFontMetrics с переносом строк без обрезания."""
+        font = QFont("Georgia", 11)
+        fm = QFontMetrics(font)
+        # Внутренняя ширина под текст (отступы слева 12px и справа 12px)
+        text_w = max(60, int(bubble_width - 24.0))
+        rect = fm.boundingRect(0, 0, text_w, 100000, Qt.TextFlag.TextWordWrap, content)
+        # 8px сверху + высота текста + 18px под временную метку + 6px снизу = rect.height() + 32.0
+        return max(44.0, float(rect.height() + 32.0))
 
     def _submit_new_flow_drop(self) -> None:
         """Отправка новой капли мысли в поток."""
@@ -659,7 +673,7 @@ class QuestTreeHUD(QWidget):
         """Плавная органическая форма левой ветви потока (без прямых линий и без изломов!)."""
         c_spiral = self._flow_spiral_center
         p_fork = QPointF(c_spiral.x(), 102.0)
-        x_base = 270.0
+        x_base = 240.0
         y_trans = 240.0
 
         if y <= 102.0:
@@ -674,7 +688,7 @@ class QuestTreeHUD(QWidget):
                     break
                 t = max(0.0, min(1.0, t - (yt - y) / dy))
             u = 1.0 - t
-            x = u**3 * 520.0 + 3.0*u**2*t * 410.0 + 3.0*u*t**2 * 270.0 + t**3 * 270.0
+            x = u**3 * c_spiral.x() + 3.0*u**2*t * (c_spiral.x() - 140.0) + 3.0*u*t**2 * x_base + t**3 * x_base
             return QPointF(x, y)
         else:
             dy = y - y_trans
@@ -685,7 +699,7 @@ class QuestTreeHUD(QWidget):
         """Плавная органическая форма правой ветви потока (без прямых линий и без изломов!)."""
         c_spiral = self._flow_spiral_center
         p_fork = QPointF(c_spiral.x(), 102.0)
-        x_base = 770.0
+        x_base = 840.0
         y_trans = 240.0
 
         if y <= 102.0:
@@ -700,7 +714,7 @@ class QuestTreeHUD(QWidget):
                     break
                 t = max(0.0, min(1.0, t - (yt - y) / dy))
             u = 1.0 - t
-            x = u**3 * 520.0 + 3.0*u**2*t * 630.0 + 3.0*u*t**2 * 770.0 + t**3 * 770.0
+            x = u**3 * c_spiral.x() + 3.0*u**2*t * (c_spiral.x() + 140.0) + 3.0*u*t**2 * x_base + t**3 * x_base
             return QPointF(x, y)
         else:
             dy = y - y_trans
@@ -730,8 +744,7 @@ class QuestTreeHUD(QWidget):
                 is_mine = (drop.author_name == self.node.username)
             else:
                 is_mine = True
-            text_lines = max(1, len(drop.content) // 26 + 1)
-            h_drop = max(38.0, text_lines * 18.0 + 16.0)
+            h_drop = self._calculate_drop_bubble_height(drop.content, self._flow_drop_width)
 
             if is_mine:
                 y_pos = max(y_cursor, y_left_last + 26.0)
@@ -2782,8 +2795,7 @@ class QuestTreeHUD(QWidget):
                 is_mine = (drop.author_name == self.node.username)
             else:
                 is_mine = True
-            text_lines = max(1, len(drop.content) // 26 + 1)
-            h_drop = max(38.0, text_lines * 18.0 + 16.0)
+            h_drop = self._calculate_drop_bubble_height(drop.content, self._flow_drop_width)
             if not is_mine:
                 y_pos = max(y_cursor, y_right_last + 26.0)
                 y_right_last = y_pos + h_drop
@@ -2804,7 +2816,7 @@ class QuestTreeHUD(QWidget):
         # Постепенное природное утоньшение: 3.2px у развилки -> 0.5px на кончике
         self._draw_volumetric_branch(painter, right_pts, 3.2, 0.5, night)
 
-        # 5. Отрисовка нанизанных капель ВНУТРЬ потока
+        # 5. Отрисовка нанизанных капель ВНУТРЬ потока на всю ширину между ветвями
         # Капли исчезают у поворота ветвей сверху (y=240) и строго РАНЬШЕ уровня кнопки новой капли снизу
         self._flow_drop_hitboxes.clear()
         y_turn = 240.0
@@ -2823,8 +2835,7 @@ class QuestTreeHUD(QWidget):
                 is_mine = (drop.author_name == self.node.username)
             else:
                 is_mine = True
-            text_lines = max(1, len(drop.content) // 26 + 1)
-            h_drop = max(38.0, text_lines * 18.0 + 16.0)
+            h_drop = self._calculate_drop_bubble_height(drop.content, self._flow_drop_width)
 
             if is_mine:
                 y_pos = max(y_c, y_l_acc + 26.0)
@@ -2837,9 +2848,11 @@ class QuestTreeHUD(QWidget):
                     continue
 
                 pt_node = self._flow_left_trunk_point(y_node)
+                pt_right = self._flow_right_trunk_point(y_node)
                 r_av = 12.0
                 b_x = pt_node.x() + r_av + 22.0 + 4.0
-                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
+                b_w = max(240.0, pt_right.x() - r_av - 22.0 - 4.0 - b_x)
+                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, b_w, h_drop)
                 if y_node <= y_clip_bottom - 6.0:
                     self._flow_drop_hitboxes.append((bubble_rect, drop))
 
@@ -2851,7 +2864,7 @@ class QuestTreeHUD(QWidget):
                 painter.setClipRect(clip_rect)
                 painter.setOpacity(fade)
                 self._draw_strung_user_drop(
-                    painter, pt_node, drop, h_drop, glow_color, core_color
+                    painter, pt_node, drop, h_drop, glow_color, core_color, bubble_width=b_w
                 )
                 painter.restore()
             else:
@@ -2865,9 +2878,11 @@ class QuestTreeHUD(QWidget):
                     continue
 
                 pt_node = self._flow_right_trunk_point(y_node)
+                pt_left = self._flow_left_trunk_point(y_node)
                 r_av = 12.0
-                b_x = pt_node.x() - r_av - 22.0 - 215.0 - 4.0
-                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, 215.0, h_drop)
+                b_x = pt_left.x() + r_av + 22.0 + 4.0
+                b_w = max(240.0, pt_node.x() - r_av - 22.0 - 4.0 - b_x)
+                bubble_rect = QRectF(b_x, pt_node.y() - 10.0, b_w, h_drop)
                 if y_node <= y_clip_bottom - 6.0:
                     self._flow_drop_hitboxes.append((bubble_rect, drop))
 
@@ -2879,7 +2894,7 @@ class QuestTreeHUD(QWidget):
                 painter.setClipRect(clip_rect)
                 painter.setOpacity(fade)
                 self._draw_strung_partner_drop(
-                    painter, pt_node, drop, h_drop, glow_color, core_color
+                    painter, pt_node, drop, h_drop, glow_color, core_color, bubble_width=b_w
                 )
                 painter.restore()
 
@@ -3023,6 +3038,7 @@ class QuestTreeHUD(QWidget):
         h_drop: float,
         glow_color: QColor,
         core_color: QColor,
+        bubble_width: float = 524.0,
     ) -> None:
         """Отрисовка капли игрока, нанизанной на левую ветвь."""
         painter.save()
@@ -3111,7 +3127,7 @@ class QuestTreeHUD(QWidget):
         painter.drawEllipse(p_end, 2.2, 2.2)
 
         # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
-        bubble_rect = QRectF(p_end.x() + 4.0, node_pt.y() - 10.0, 215.0, h_drop)
+        bubble_rect = QRectF(p_end.x() + 4.0, node_pt.y() - 10.0, bubble_width, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
         if not night:
@@ -3147,7 +3163,7 @@ class QuestTreeHUD(QWidget):
         font = QFont("Georgia", 11)
         painter.setFont(font)
         painter.setPen(text_color)
-        text_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.top() + 6.0, bubble_rect.width() - 16.0, bubble_rect.height() - 20.0)
+        text_rect = QRectF(bubble_rect.left() + 12.0, bubble_rect.top() + 8.0, bubble_rect.width() - 24.0, bubble_rect.height() - 26.0)
         painter.drawText(text_rect, Qt.AlignLeft | Qt.TextWordWrap, drop.content)
 
         time_str = ""
@@ -3159,7 +3175,7 @@ class QuestTreeHUD(QWidget):
             font_time = QFont("sans-serif", 9)
             painter.setFont(font_time)
             painter.setPen(time_color)
-            time_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.bottom() - 16.0, bubble_rect.width() - 16.0, 14.0)
+            time_rect = QRectF(bubble_rect.left() + 12.0, bubble_rect.bottom() - 18.0, bubble_rect.width() - 24.0, 14.0)
             painter.drawText(time_rect, Qt.AlignRight | Qt.AlignVCenter, time_str)
 
         painter.restore()
@@ -3172,6 +3188,7 @@ class QuestTreeHUD(QWidget):
         h_drop: float,
         glow_color: QColor,
         core_color: QColor,
+        bubble_width: float = 524.0,
     ) -> None:
         """Отрисовка капли собеседника/Эйры, нанизанной на правую ветвь."""
         painter.save()
@@ -3263,7 +3280,7 @@ class QuestTreeHUD(QWidget):
         painter.drawEllipse(p_end, 2.2, 2.2)
 
         # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
-        bubble_rect = QRectF(p_end.x() - 215.0 - 4.0, node_pt.y() - 10.0, 215.0, h_drop)
+        bubble_rect = QRectF(p_end.x() - bubble_width - 4.0, node_pt.y() - 10.0, bubble_width, h_drop)
         painter.setPen(Qt.NoPen)
         bg_grad = QLinearGradient(bubble_rect.left(), bubble_rect.top(), bubble_rect.right(), bubble_rect.bottom())
         if not night:
@@ -3299,7 +3316,7 @@ class QuestTreeHUD(QWidget):
         font = QFont("Georgia", 11)
         painter.setFont(font)
         painter.setPen(text_color)
-        text_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.top() + 6.0, bubble_rect.width() - 16.0, bubble_rect.height() - 20.0)
+        text_rect = QRectF(bubble_rect.left() + 12.0, bubble_rect.top() + 8.0, bubble_rect.width() - 24.0, bubble_rect.height() - 26.0)
         painter.drawText(text_rect, Qt.AlignLeft | Qt.TextWordWrap, drop.content)
 
         time_str = ""
@@ -3311,7 +3328,7 @@ class QuestTreeHUD(QWidget):
             font_time = QFont("sans-serif", 9)
             painter.setFont(font_time)
             painter.setPen(time_color)
-            time_rect = QRectF(bubble_rect.left() + 8.0, bubble_rect.bottom() - 16.0, bubble_rect.width() - 16.0, 14.0)
+            time_rect = QRectF(bubble_rect.left() + 12.0, bubble_rect.bottom() - 18.0, bubble_rect.width() - 24.0, 14.0)
             painter.drawText(time_rect, Qt.AlignRight | Qt.AlignVCenter, time_str)
 
         painter.restore()

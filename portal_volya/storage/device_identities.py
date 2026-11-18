@@ -268,6 +268,50 @@ class DeviceIdentitiesManager:
             if pk not in self._excluded_pubkeys
         ]
 
+    def reconcile_with_store(self, dag_store: Any) -> list[str]:
+        """
+        Автоматическая сверка локальных идентичностей устройства с реальной базой Merkle DAG (RocksDB).
+        Удаляет фантомные и устаревшие тестовые профили, отсутствующие в Древе.
+        """
+        if dag_store is None:
+            return []
+
+        pruned_names: list[str] = []
+        for pk, ident in list(self._identities.items()):
+            player = None
+            if hasattr(dag_store, "get_player"):
+                player = dag_store.get_player(pk)
+
+            # Если по pubkey не найден, проверяем по имени в Древе
+            if not player and hasattr(dag_store, "get_player_by_name_or_pubkey"):
+                p_by_name = dag_store.get_player_by_name_or_pubkey(ident.username)
+                if p_by_name and p_by_name.pubkey == pk:
+                    player = p_by_name
+
+            if not player:
+                pruned_names.append(ident.username)
+                del self._identities[pk]
+
+        # Если на устройстве не осталось игроков, восстанавливаем канонического Сигома
+        if not self._identities:
+            sigom_kp = derive_genesis_keypair(SIGOM_SEED)
+            sigom_id = DevicePlayerIdentity(
+                keypair=sigom_kp,
+                username="Сигом",
+                bio="Человек, автор и вдохновитель Вселенной и игры «Воля»",
+            )
+            self._identities[sigom_kp.public_hex] = sigom_id
+            self._active_pubkey = sigom_kp.public_hex
+
+        if self._active_pubkey not in self._identities:
+            players = self.list_players()
+            self._active_pubkey = players[0].pubkey if players else None
+
+        if pruned_names:
+            self._save()
+
+        return pruned_names
+
     def get_player(self, pubkey: str) -> Optional[DevicePlayerIdentity]:
         """Получить идентичность игрока по pubkey."""
         return self._identities.get(pubkey)

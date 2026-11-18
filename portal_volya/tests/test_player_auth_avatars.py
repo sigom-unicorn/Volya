@@ -82,17 +82,35 @@ def test_device_identities_manager(temp_node_dir):
     assert neophyte_id.verify_pin("5678") is True
     assert neophyte_id.verify_pin("1234") is False
 
+    # 5. Проверка автоматической сверки и очистки фантомов при старте
+    from portal_volya.storage.dag_store import DagStore
+    from portal_volya.core.crypto import KeyPair
+    from portal_volya.storage.device_identities import DevicePlayerIdentity
+
+    dag_store = DagStore(temp_node_dir / "test_reconcile.rocksdb")
+    dag_store.ensure_genesis_tree()
+
+    # Добавляем фантома, которого нет в dag.rocksdb
+    phantom = DevicePlayerIdentity(
+        keypair=KeyPair.generate(),
+        username="СтарыйТест",
+    )
+    mgr.add_or_update_player(phantom)
+    assert any(p.username == "СтарыйТест" for p in mgr.list_players())
+
+    # Выполняем сверку
+    pruned = mgr.reconcile_with_store(dag_store)
+    assert "СтарыйТест" in pruned
+    assert not any(p.username == "СтарыйТест" for p in mgr.list_players())
+    dag_store.close()
+
 
 def test_node_create_neophyte_and_initiation(temp_node_dir, qapp):
     """Проверка создания Неофита в квесте «Посвящение» с 0 капель совести."""
     with VolyaNode(node_dir=temp_node_dir) as node:
-        # Проверяем, что квест Посвящение есть в Древе
-        init_q = node.dag_store.get_quest("quest-posvyashchenie")
-        assert init_q is not None
-        assert init_q.tier == TreeTier.ROOT_CHILD
-        assert init_q.title == "Посвящение"
-        role_titles = [r.title for r in init_q.kon.roles]
-        assert "Неофит" in role_titles
+        # До создания Неофита квеста Посвящения еще нет на чистом Древе
+        init_q_before = node.dag_store.get_quest("quest-posvyashchenie")
+        assert init_q_before is None
 
         # Создаём Неофита
         player, dev_id = node.create_neophyte_player(
@@ -106,6 +124,14 @@ def test_node_create_neophyte_and_initiation(temp_node_dir, qapp):
         assert len(player.roles) == 1
         assert player.roles[0].quest_id == "quest-posvyashchenie"
         assert player.roles[0].role_title == "Неофит"
+
+        # После создания Неофита квест «Посвящение» динамически пророс в Древе!
+        init_q = node.dag_store.get_quest("quest-posvyashchenie")
+        assert init_q is not None
+        assert init_q.tier == TreeTier.ROOT_CHILD
+        assert init_q.title == "Посвящение"
+        role_titles = [r.title for r in init_q.kon.roles]
+        assert "Неофит" in role_titles
 
         # Проверяем аватарку в хранилище блобов
         avatar_data = node.get_player_avatar_bytes(player.pubkey)

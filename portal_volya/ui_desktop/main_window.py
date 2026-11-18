@@ -10,7 +10,10 @@ from datetime import datetime
 from typing import Optional
 
 from PySide6.QtCore import (
+    QBuffer,
+    QByteArray,
     QEasingCurve,
+    QIODevice,
     QParallelAnimationGroup,
     QPoint,
     QPropertyAnimation,
@@ -320,6 +323,10 @@ class VolyaLivingWindow(QMainWindow):
         else:
             self.corner_avatar.setVisible(True)
 
+        # Регистрируем поставщик живых снимков окна Портала для зрительного восприятия Эйры
+        if hasattr(self.node, "eira") and hasattr(self.node.eira, "tools"):
+            self.node.eira.tools.set_screenshot_provider(self.capture_portal_screenshot)
+
         # Панель управления внизу (скрыта по умолчанию, открывается по 'H')
         self.control_pill = GlassControlPill(self.world_widget, self)
         self.control_pill.adjustSize()
@@ -526,6 +533,28 @@ class VolyaLivingWindow(QMainWindow):
 
         # Подсказка в левом нижнем углу
         self.lbl_hint.move(20, self.height() - 28)
+
+    def capture_portal_screenshot(self) -> bytes:
+        """Снимок живого окна Портала Воли для зрительного восприятия Эйры."""
+        try:
+            pixmap = self.grab()
+            if pixmap.isNull():
+                return b""
+            # Оптимальный размер для быстрой и точной передачи в мультимодальную модель
+            if pixmap.width() > 1280 or pixmap.height() > 800:
+                pixmap = pixmap.scaled(
+                    1280, 800,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            ba = QByteArray()
+            buf = QBuffer(ba)
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap.save(buf, "PNG")
+            return bytes(ba)
+        except Exception as e:
+            print(f"Ошибка при захвате экрана Портала: {e}")
+            return b""
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not self.is_authenticated and event.key() == Qt.Key_Escape:

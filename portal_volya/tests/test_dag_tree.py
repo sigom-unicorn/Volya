@@ -53,18 +53,25 @@ def test_genesis_tree_structure(temp_dag_store):
     assert store.get_blob(root.logo) is not None
     assert store.get_quest_logo(root) is not None
 
-    # 2. Проверяем дочерние квесты корня: «Портал Воли» и «Посвящение»
+    # 2. Проверяем дочерние квесты корня при чистом старте: только «Портал Воли»
     root_children = store.get_child_quests("quest-volya-root")
     titles = [q.title for q in root_children]
-    assert len(root_children) == 2
+    assert len(root_children) == 1
     assert "Портал Воли" in titles
-    assert "Посвящение" in titles
+    assert "Посвящение" not in titles
     portal = next(q for q in root_children if q.id == "quest-portal-volya")
     assert portal.tier == TreeTier.ROOT_CHILD
     assert portal.parent_quest_id == root.id
-    init_q = next(q for q in root_children if q.id == "quest-posvyashchenie")
+
+    # 3. При динамическом вызове ensure_initiation_quest квест «Посвящение» прорастает в Древе
+    from portal_volya.core.genesis import ensure_initiation_quest
+    init_q = ensure_initiation_quest(store, root_quest_id=root.id)
     assert init_q.tier == TreeTier.ROOT_CHILD
     assert init_q.parent_quest_id == root.id
+
+    children_after = store.get_child_quests("quest-volya-root")
+    assert len(children_after) == 2
+    assert "Посвящение" in [q.title for q in children_after]
 
 
 def test_flow_drops_with_resource_tool_artifact(temp_dag_store):

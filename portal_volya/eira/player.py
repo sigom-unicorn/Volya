@@ -112,20 +112,17 @@ class EiraPlayer:
             participant_pubkeys=participant_pubkeys,
             flow_summary=flow_summary,
             message_embedding=message_vec,
+            incoming_message=message,
         )
 
         # 2. Формирование истории диалога (скользящее окно)
-        contents: list[Any] = []
+        history: list[types.Content] = []
         if conversation_history:
             for item in conversation_history:
                 role = item.get("role", "user")
                 text = item.get("content", "")
-                # Приводим к ролям Gemini (user / model)
                 gemini_role = "model" if role in ("assistant", "model") else "user"
-                contents.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=text)]))
-
-        # Добавляем текущее сообщение
-        contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+                history.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=text)]))
 
         # 3. Настройка генерации с нативными инструментами EiraTools
         config = types.GenerateContentConfig(
@@ -135,20 +132,34 @@ class EiraPlayer:
         )
 
         try:
-            response = self.client.models.generate_content(
+            chat = self.client.chats.create(
                 model=self.model,
-                contents=contents,
                 config=config,
+                history=history,
             )
+            response = chat.send_message(message)
 
-            # Отслеживаем, какие инструменты вызывались (если были вызовы)
             tools_used: list[str] = []
-            if hasattr(response, "function_calls") and response.function_calls:
-                for fc in response.function_calls:
-                    if hasattr(fc, "name"):
-                        tools_used.append(fc.name)
+            for msg in chat.get_history():
+                for part in msg.parts:
+                    if hasattr(part, "function_call") and part.function_call and hasattr(part.function_call, "name"):
+                        tools_used.append(part.function_call.name)
 
-            reply_text = response.text or ""
+            # Если был сделан снимок экрана Портала — передаем его в зрительный контур Эйры
+            screenshot_bytes = getattr(self.tools, "_last_screenshot_bytes", None)
+            if screenshot_bytes:
+                self.tools._last_screenshot_bytes = None
+                img_part = types.Part.from_bytes(data=screenshot_bytes, mime_type="image/png")
+                vision_prompt = (
+                    "Вот сделанный тобой снимок экрана Портала Воли. "
+                    "Внимательно рассмотри изображение своими глазами и ответь соратнику, "
+                    "опираясь на то, что ты реально видишь на экране."
+                )
+                vision_resp = chat.send_message([vision_prompt, img_part])
+                reply_text = vision_resp.text or response.text or ""
+            else:
+                reply_text = response.text or ""
+
             return EiraReply(
                 text=reply_text,
                 tools_called=tools_used,

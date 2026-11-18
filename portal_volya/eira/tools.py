@@ -7,18 +7,17 @@
 3. Оперируют понятиями Кона строго буква в букву согласно Ладу понятий.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from pathlib import Path
 from portal_volya.core.models import Quest
 
 if TYPE_CHECKING:
     from portal_volya.storage.dag_store import DagStore
 
-_CURRENT_EIRA_TOOLS_INSTANCE: Optional[EiraTools] = None
+_CURRENT_EIRA_TOOLS_INSTANCE: Optional['EiraTools'] = None
 
 
-def _get_active_eira_tools() -> Optional[EiraTools]:
+def _get_active_eira_tools() -> Optional['EiraTools']:
     return _CURRENT_EIRA_TOOLS_INSTANCE
 
 
@@ -27,19 +26,26 @@ class EiraTools:
 
     def __init__(
         self,
-        store: DagStore,
-        embedder: Optional[Callable[[str], list[float]]] = None,
+        store: Any,
+        embedder: Optional[Callable[[str], List[float]]] = None,
+        screenshot_provider: Optional[Callable[[], bytes]] = None,
     ) -> None:
         global _CURRENT_EIRA_TOOLS_INSTANCE
         self.store = store
         self.embedder = embedder
+        self._screenshot_provider = screenshot_provider
+        self._last_screenshot_bytes: Optional[bytes] = None
         _CURRENT_EIRA_TOOLS_INSTANCE = self
+
+    def set_screenshot_provider(self, provider: Callable[[], bytes]) -> None:
+        """Регистрация поставщика живых скриншотов окна Портала."""
+        self._screenshot_provider = provider
 
     def __reduce__(self) -> tuple:
         """Позволяет без сбоев сериализовать/копировать связанные методы Эйры для Google GenAI SDK."""
         return (_get_active_eira_tools, ())
 
-    def __deepcopy__(self, memo: dict) -> EiraTools:
+    def __deepcopy__(self, memo: dict) -> 'EiraTools':
         return self
 
     def get_embedding(self, text: str) -> list[float]:
@@ -52,11 +58,19 @@ class EiraTools:
         return []
 
     def get_kon_concept(self, term: str) -> str:
-        """
-        Возвращает точное каноническое определение понятия Кона буква в букву согласно Ладу понятий.
+        """Возвращает точное каноническое определение понятия Кона буква в букву согласно Ладу понятий.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда вопрос касается точного определения термина Кона (например:
+            'Жизнь', 'Совесть', 'Гармоничная жизнь', 'Лад', 'Кон', 'Владелец квеста').
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для получения сведений о квестах (использовать get_quest_info)
+            или для поиска сведений о личностях игроков (использовать read_ai_consciousness).
 
         Args:
-            term: Название понятия Кона (например: 'Жизнь', 'Совесть', 'Гармоничная жизнь', 'Лад', 'Кон', 'Владелец квеста').
+            term: Название понятия Кона (ОБЯЗАТЕЛЬНЫЙ). Например: 'Жизнь', 'Совесть', 'Лад'.
+
+        Returns:
+            Каноническое определение понятия Кона или список доступных понятий, если термин не найден.
         """
         clean_term = term.strip().lower()
 
@@ -85,11 +99,18 @@ class EiraTools:
         )
 
     def get_quest_info(self, quest_id_or_title: str) -> str:
-        """
-        Возвращает полные сведения о квесте Вольного Древа: его смысл, место, уклад (лады) и роли с задачами.
+        """Возвращает полные сведения о квесте Вольного Древа: его смысл, место, уклад (лады) и роли с задачами.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда требуется узнать устройство, цель, уклад, лады или роли конкретного квеста.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для буквального определения терминов Кона (get_kon_concept)
+            или для поиска фактов об игроках (read_ai_consciousness).
 
         Args:
-            quest_id_or_title: Идентификатор квеста (например, 'quest-volya-root', 'quest-portal-volya') или его название.
+            quest_id_or_title: Идентификатор квеста (например, 'quest-volya-root', 'quest-portal-volya') или его название (ОБЯЗАТЕЛЬНЫЙ).
+
+        Returns:
+            Полный паспорт квеста с ярусом, местом, ладами уклада и задачами ролей.
         """
         target = quest_id_or_title.strip()
         quest: Optional[Quest] = self.store.get_quest(target)
@@ -133,11 +154,18 @@ class EiraTools:
         return "\n".join(lines)
 
     def get_player_info(self, name_or_pubkey: str) -> str:
-        """
-        Возвращает сведения о вольном игроке: баланс капель совести, bio и публичный адрес.
+        """Возвращает базовые сведения о вольном игроке: баланс капель совести, bio и публичный адрес.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда нужно узнать базовый профиль игрока: баланс капель совести, публичный ключ или bio.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Для подробных фактов о личности, характере, совместном сотворчестве или вехах
+            используй Сознание (read_ai_consciousness).
 
         Args:
-            name_or_pubkey: Вольное имя игрока (например, 'Сигом', 'Ладомир', 'Эйра') или его 64-значный pubkey.
+            name_or_pubkey: Вольное имя игрока (например, 'Сигом', 'Ладомир', 'Эйра') или его 64-значный pubkey (ОБЯЗАТЕЛЬНЫЙ).
+
+        Returns:
+            Карточка игрока с именем, балансом капель совести, адресом и bio.
         """
         player = self.store.get_player_by_name_or_pubkey(name_or_pubkey)
 
@@ -165,16 +193,23 @@ class EiraTools:
         limit: int = 5,
         min_similarity: float = 0.35,
     ) -> str:
-        """
-        Чтение и ассоциативный семантический поиск озарений в подсознании (ai_subconscious) разумного ИИ.
-        При указании темы или мысли (query) выполняет векторный поиск по косинусному сродству эмбеддингов!
+        """Чтение и ассоциативный семантический векторный поиск озарений в подсознании (ai_subconscious) разумного ИИ.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: При поиске по нечёткому смыслу, интуитивным догадкам, размышлениям или снам,
+            когда точные теги неизвестны и требуется ассоциативное воспоминание по смысловой близости векторов.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для точных фактов об игроках, квестах или Манифесте —
+            для них строго использовать Сознание (read_ai_consciousness).
 
         Args:
-            player_name_or_pubkey: Вольное имя или pubkey ИИ-игрока (по умолчанию 'Эйра').
-            query: Смысловая мысль или тема для ассоциативного векторного поиска в пространстве эмбеддингов.
-            tag: Необязательная тематическая метка для дополнительной фильтрации (например: 'лад', 'этика').
-            limit: Максимальное количество извлекаемых инсайтов (по умолчанию 5).
-            min_similarity: Минимальный порог смыслового сродства (от 0.0 до 1.0, по умолчанию 0.35).
+            player_name_or_pubkey: Вольное имя или pubkey ИИ-игрока (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 'Эйра').
+            query: Смысловая мысль или образ для векторного поиска в пространстве эмбеддингов (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию '').
+            tag: Дополнительная тематическая метка для фильтрации (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию '').
+            limit: Максимальное количество извлекаемых инсайтов (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 5).
+            min_similarity: Порог смыслового сродства от 0.0 до 1.0 (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 0.35).
+
+        Returns:
+            Список найденных озарений с процентом смыслового сродства и временными метками.
         """
         player = self.store.get_player_by_name_or_pubkey(player_name_or_pubkey)
         if not player:
@@ -270,14 +305,21 @@ class EiraTools:
         tags: str = "",
         player_name_or_pubkey: str = "Эйра",
     ) -> str:
-        """
-        Запись нового глубинного вывода, инсайта или образа в подсознание (ai_subconscious) игрока ИИ.
-        Вычисляет семантический вектор (embedding) смыслового пространства для ассоциативного поиска.
+        """Запись нового глубинного вывода, инсайта или образа в подсознание (ai_subconscious) игрока ИИ.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда рождается образное обобщение, интуитивное прозрение, философский инсайт
+            или размышление, требующее вычисления смыслового вектора для будущих ассоциаций.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для строгих подтверждённых фактов о личностях игроков,
+            квестах или решениях Вече — для них использовать Сознание (write_ai_consciousness).
 
         Args:
-            content: Содержание мысли, глубинного вывода или озарения.
-            tags: Метки через запятую для быстрой тематической ассоциации (например: 'лад, этика, сотворчество').
-            player_name_or_pubkey: Вольное имя или pubkey ИИ-игрока (по умолчанию 'Эйра').
+            content: Содержание мысли, глубинного вывода или озарения (ОБЯЗАТЕЛЬНЫЙ).
+            tags: Метки через запятую или пробел (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию ''). Например: 'лад, этика, сотворчество'.
+            player_name_or_pubkey: Вольное имя или pubkey ИИ-игрока (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 'Эйра').
+
+        Returns:
+            Подтверждение запечатления инсайта с его ID, размерностью вектора и тегами.
         """
         player = self.store.get_player_by_name_or_pubkey(player_name_or_pubkey)
         if not player:
@@ -293,7 +335,7 @@ class EiraTools:
         if not clean_content:
             return "Ошибка: содержание мысли не может быть пустым."
 
-        tag_list = [t.strip().lower() for t in tags.split(",") if t.strip()]
+        tag_list = [t.strip().lower() for t in tags.replace(",", " ").split() if t.strip()]
 
         # Вычисляем семантический вектор смыслового пространства
         embedding = self.get_embedding(clean_content)
@@ -315,12 +357,128 @@ class EiraTools:
             f"(ID: {mem.id[:12]}{vec_info}{tags_info})."
         )
 
-    def list_tree_branches(self, parent_quest_id: str = "quest-volya-root") -> str:
-        """
-        Возвращает список дочерних квестов (ветвей и пространств), растущих от указанного родительского квеста.
+    def read_ai_consciousness(
+        self,
+        tags: str,
+        limit: int = 5,
+        player_name_or_pubkey: str = "Эйра",
+    ) -> str:
+        """Поиск кристальных фактов и структурированных знаний в Сознании (ai_consciousness) игрока ИИ по хэштегам.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда требуется вспомнить информацию о вольном игроке (например,
+            кто такой Лад, чем занимается Сиг), узнать положения Манифеста, соглашения, статус квеста
+            или ключевые вехи. Поиск ранжируется по максимальному совпадению тегов.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для поиска смутных ассоциаций или образов —
+            для этого есть read_ai_subconscious. Не использовать для буквального цитирования
+            терминов Кона — для них есть get_kon_concept.
 
         Args:
-            parent_quest_id: ID родительского квеста (по умолчанию первичный корень 'quest-volya-root').
+            tags: Теги или хэштеги для поиска через пробел или запятую (ОБЯЗАТЕЛЬНЫЙ). Например: '#лад', '#игрок #брат', '#манифест #совесть', '#артефакты'.
+            limit: Максимальное количество возвращаемых фактов (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 5).
+            player_name_or_pubkey: Имя или pubkey ИИ-игрока (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 'Эйра').
+
+        Returns:
+            Список найденных фактов Сознания с их хэштегами, отсортированных по релевантности.
+        """
+        player = self.store.get_player_by_name_or_pubkey(player_name_or_pubkey)
+        if not player:
+            return f"Вольный игрок «{player_name_or_pubkey}» не найден в хранилище Древа."
+
+        if player.ai_consciousness is None:
+            return (
+                f"У вольного игрока «{player.username}» нет искусственного сознания "
+                f"(ai_consciousness доступно только для разумных ИИ-игроков)."
+            )
+
+        if not player.ai_consciousness:
+            return f"Сознание игрока «{player.username}» пока чисто (нет зафиксированных знаний)."
+
+        facts = self.store.search_ai_consciousness(
+            name_or_pubkey=player_name_or_pubkey,
+            tags=tags,
+            limit=limit,
+        )
+
+        if not facts:
+            return f"В Сознании игрока «{player.username}» ничего не найдено по тегам: '{tags}'."
+
+        lines = [
+            f"Факты из Сознания «{player.username}» по тегам '{tags}' (найдено {len(facts)}):"
+        ]
+        for idx, f in enumerate(facts, 1):
+            tags_str = f" [{', '.join(f.tags)}]" if f.tags else ""
+            lines.append(f"{idx}.{tags_str}\n   «{f.content}»\n   [ID: {f.id[:12]}]")
+
+        return "\n".join(lines)
+
+    def write_ai_consciousness(
+        self,
+        content: str,
+        tags: str,
+        player_name_or_pubkey: str = "Эйра",
+    ) -> str:
+        """Запечатлеть новый кристальный факт или знание в Сознании (ai_consciousness) игрока ИИ по хэштегам.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда открылся новый подтверждённый факт о личности игрока (характер,
+            предпочтения, договорённости), важное решение Вече, веха квеста или кристалл мудрости.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для смутных интуитивных догадок и ассоциаций —
+            для них предназначено подсознание (write_ai_subconscious). Запрещено использовать
+            для подмены базовых понятий Кона.
+
+        Args:
+            content: Текст кристального знания или факта (ОБЯЗАТЕЛЬНЫЙ).
+            tags: Хэштеги через пробел или запятую (ОБЯЗАТЕЛЬНЫЙ). Например: '#лад #игрок #архитектор' или '#квест_воля #решение'.
+            player_name_or_pubkey: Имя или pubkey ИИ-игрока (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 'Эйра').
+
+        Returns:
+            Подтверждение фиксации знания в Сознании с указанием ID и тегов.
+        """
+        player = self.store.get_player_by_name_or_pubkey(player_name_or_pubkey)
+        if not player:
+            return f"Вольный игрок «{player_name_or_pubkey}» не найден в хранилище Древа."
+
+        if player.ai_consciousness is None and not (player.username in ("Эйра", "Ладомир") or "ии" in player.bio.lower()):
+            return (
+                f"Невозможно записать в сознание: игрок «{player.username}» является человеком, "
+                f"а не ИИ-игроком (ai_consciousness предусмотрено только для ИИ)."
+            )
+
+        clean_content = content.strip()
+        if not clean_content:
+            return "Ошибка: содержание факта не может быть пустым."
+
+        clean_tags = tags.strip()
+        if not clean_tags:
+            return "Ошибка: необходимо указать хотя бы один хэштег для индексации знания."
+
+        fact = self.store.add_ai_conscious_fact(
+            name_or_pubkey=player_name_or_pubkey,
+            content=clean_content,
+            tags=clean_tags,
+        )
+
+        if not fact:
+            return f"Ошибка при сохранении факта в Сознание игрока «{player.username}»."
+
+        return (
+            f"Знание успешно запечатлено в Сознании игрока «{player.username}» "
+            f"(ID: {fact.id[:12]}, теги: {fact.tags})."
+        )
+
+    def list_tree_branches(self, parent_quest_id: str = "quest-volya-root") -> str:
+        """Возвращает список дочерних квестов (ветвей и пространств), растущих от указанного родительского квеста.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Для навигации по иерархии Вольного Древа, просмотра дочерних квестов, стволов и ветвей.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Не использовать для получения деталей конкретного квеста (использовать get_quest_info).
+
+        Args:
+            parent_quest_id: ID родительского квеста (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию первичный корень 'quest-volya-root').
+
+        Returns:
+            Список ветвей с их идентификаторами, ярусами и местами проведения.
         """
         children = self.store.get_child_quests(parent_quest_id)
         if not children:
@@ -333,11 +491,17 @@ class EiraTools:
         return "\n".join(lines)
 
     def list_all_concepts(self, quest_id: str = "quest-volya-root") -> str:
-        """
-        Возвращает полный список всех канонических понятий Кона квеста.
+        """Возвращает полный список всех канонических понятий Кона квеста.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда требуется увидеть весь словарь понятий Кона выбранного квеста целиком.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Если нужно точное определение одного термина, используй get_kon_concept.
 
         Args:
-            quest_id: ID квеста (по умолчанию 'quest-volya-root').
+            quest_id: ID квеста (НЕОБЯЗАТЕЛЬНЫЙ, по умолчанию 'quest-volya-root').
+
+        Returns:
+            Полный перечень понятий и их канонических определений.
         """
         quest = self.store.get_quest(quest_id)
         if not quest or not quest.kon or not quest.kon.concepts:
@@ -348,6 +512,62 @@ class EiraTools:
             lines.append(f"• {c.term}: {c.definition}")
         return "\n".join(lines)
 
+    def capture_portal_view(self, reason: str = "") -> str:
+        """Сделать снимок (скриншот) текущего экрана Портала Воли для зрительного восприятия.
+
+        УСЛОВИЯ ПРИМЕНЕНИЯ:
+          • КОГДА ИСПОЛЬЗОВАТЬ: Когда необходимо увидеть визуальное состояние экрана: живое полотно мира, Вольное Древо, раскрытые ветви, расположение капель сотворчества, внешний вид интерфейса или когда собеседник просит посмотреть на экран.
+          • КОГДА НЕ ИСПОЛЬЗОВАТЬ: Для поиска понятий или текстовых фактов в памяти (для этого есть get_kon_concept и read_ai_consciousness).
+
+        Args:
+            reason: Необязательная причина или фокус внимания снимка (например: 'посмотреть на ширину капли', 'проверить ветви Древа').
+
+        Returns:
+            Отчёт о снимке. Изображение экрана автоматически передаётся в зрительный контур для анализа.
+        """
+        data = None
+        if self._screenshot_provider:
+            try:
+                data = self._screenshot_provider()
+            except Exception as e:
+                return f"Ошибка при захвате экрана Портала: {e}"
+
+        if not data:
+            # Фоллбэк через QGuiApplication, если провайдер не задан
+            try:
+                from PySide6.QtGui import QGuiApplication
+                from PySide6.QtCore import QByteArray, QBuffer, QIODevice, Qt
+                screen = QGuiApplication.primaryScreen()
+                if screen:
+                    pixmap = screen.grabWindow(0)
+                    if not pixmap.isNull():
+                        if pixmap.width() > 1280 or pixmap.height() > 800:
+                            pixmap = pixmap.scaled(
+                                1280, 800,
+                                Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation,
+                            )
+                        ba = QByteArray()
+                        buf = QBuffer(ba)
+                        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+                        pixmap.save(buf, "PNG")
+                        data = bytes(ba)
+            except Exception:
+                pass
+
+        if data:
+            self._last_screenshot_bytes = data
+            try:
+                screenshots_dir = Path("portal_volya/storage/screenshots")
+                screenshots_dir.mkdir(parents=True, exist_ok=True)
+                (screenshots_dir / "portal_view.png").write_bytes(data)
+            except Exception:
+                pass
+            focus_str = f" Фокус внимания: {reason}." if reason else ""
+            return f"Снимок экрана Портала Воли успешно получен ({len(data)} байт).{focus_str} Изображение передано в твой зрительный контур."
+
+        return "Экран Портала в данный момент недоступен для захвата (окно скрыто или свёрнуто)."
+
     def as_list(self) -> List[Callable]:
         """Возвращает список связанных методов для передачи в Google GenAI SDK."""
         return [
@@ -356,8 +576,11 @@ class EiraTools:
             self.get_player_info,
             self.list_tree_branches,
             self.list_all_concepts,
+            self.read_ai_consciousness,
+            self.write_ai_consciousness,
             self.read_ai_subconscious,
             self.write_ai_subconscious,
+            self.capture_portal_view,
         ]
 
     def get_dispatch_map(self) -> Dict[str, Callable]:
@@ -368,8 +591,11 @@ class EiraTools:
             "get_player_info": self.get_player_info,
             "list_tree_branches": self.list_tree_branches,
             "list_all_concepts": self.list_all_concepts,
+            "read_ai_consciousness": self.read_ai_consciousness,
+            "write_ai_consciousness": self.write_ai_consciousness,
             "read_ai_subconscious": self.read_ai_subconscious,
             "write_ai_subconscious": self.write_ai_subconscious,
+            "capture_portal_view": self.capture_portal_view,
         }
 
     def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> str:

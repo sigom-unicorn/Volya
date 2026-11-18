@@ -22,6 +22,7 @@ from portal_volya.core.crypto import (
 )
 from portal_volya.core.genesis import EIRA_SEED, derive_genesis_keypair
 from portal_volya.core.models import (
+    AIConsciousFact,
     AIMemory,
     DagNode,
     DagNodeType,
@@ -393,24 +394,6 @@ class DagStore:
                 if f:
                     flows.append(f)
 
-        # Если для квеста пока нет потоков, автоматически создаём каноническую общую Беседу квеста
-        if not flows:
-            eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
-            quest = self.get_quest(quest_id)
-            q_title = quest.title if quest else "Квест"
-            default_flow = QuestFlow(
-                id=f"flow-{quest_id}-general",
-                quest_id=quest_id,
-                kind=FlowKind.CONVERSATION,
-                title=f"Беседа квеста «{q_title}»",
-                initiator_pubkey=eira_pk,
-                participants=[eira_pk],
-                created_at=datetime.now(timezone.utc).isoformat(),
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            )
-            self.put_quest_flow(default_flow)
-            flows.append(default_flow)
-
         return flows
 
     def get_quest_players(self, quest_id: str) -> list[Player]:
@@ -645,6 +628,126 @@ class DagStore:
             clean_query = query.strip().lower()
             memories = [m for m in memories if clean_query in m.content.lower()]
         return memories
+
+    # -----------------------------------------------------------------
+    # Сознание ИИ (ai_consciousness) — Кристальные знания по хэштегам
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_tags(tags: list[str] | str) -> list[str]:
+        """Приводит теги/хэштеги к чистому каноническому списку (с сохранением префикса #)."""
+        raw_list: list[str] = []
+        if isinstance(tags, str):
+            # Разделяем по пробелам или запятым
+            parts = tags.replace(",", " ").split()
+            raw_list = parts
+        elif isinstance(tags, (list, tuple, set)):
+            for item in tags:
+                if isinstance(item, str):
+                    raw_list.extend(item.replace(",", " ").split())
+
+        result: list[str] = []
+        seen = set()
+        for t in raw_list:
+            cleaned = t.strip().lower()
+            if not cleaned:
+                continue
+            if not cleaned.startswith("#"):
+                cleaned = f"#{cleaned}"
+            if cleaned not in seen:
+                seen.add(cleaned)
+                result.append(cleaned)
+        return result
+
+    def add_ai_conscious_fact(
+        self,
+        name_or_pubkey: str,
+        content: str,
+        tags: list[str] | str = "",
+        created_at: Optional[str] = None,
+    ) -> Optional[AIConsciousFact]:
+        """Добавление кристального факта в Сознание (ai_consciousness) игрока ИИ."""
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player:
+            return None
+
+        if player.ai_consciousness is None:
+            if player.username in ("Эйра", "Ладомир") or "ии" in player.bio.lower():
+                player.ai_consciousness = []
+            else:
+                return None
+
+        clean_content = content.strip()
+        if not clean_content:
+            return None
+
+        now = created_at or datetime.now(timezone.utc).isoformat()
+        tag_list = self._normalize_tags(tags)
+        fact_id = hash_canonical({"content": clean_content, "tags": tag_list, "created_at": now})
+
+        fact = AIConsciousFact(
+            id=fact_id,
+            content=clean_content,
+            tags=tag_list,
+            created_at=now,
+        )
+        player.ai_consciousness.append(fact)
+        self.save_player(player)
+        return fact
+
+    def search_ai_consciousness(
+        self,
+        name_or_pubkey: str,
+        tags: list[str] | str = "",
+        limit: int = 5,
+    ) -> list[AIConsciousFact]:
+        """
+        Поиск фактов в Сознании игрока ИИ по совпадению хэштегов/меток.
+        Сортирует по максимальному совпадению тегов (релевантности) и свежести.
+        """
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player or not player.ai_consciousness:
+            return []
+
+        stopwords = {
+            "что", "как", "это", "где", "для", "или", "все", "всё", "без", "при",
+            "так", "чем", "кто", "про", "под", "над", "такое", "такой", "расскажи",
+            "скажи", "помнишь", "знаешь", "тебя", "меня", "быть", "есть", "было"
+        }
+
+        raw_query_tags = [t.lstrip("#").lower() for t in self._normalize_tags(tags)]
+        query_tags_set = {t for t in raw_query_tags if t not in stopwords and len(t) >= 2}
+
+        # Если теги не переданы, возвращаем последние факты
+        if not query_tags_set:
+            return sorted(player.ai_consciousness, key=lambda f: f.created_at, reverse=True)[:limit]
+
+        scored: list[tuple[AIConsciousFact, int]] = []
+        for fact in player.ai_consciousness:
+            fact_tags_set = {t.lstrip("#").lower() for t in fact.tags}
+            score = 0
+
+            for qt in query_tags_set:
+                if qt in fact_tags_set:
+                    score += 10
+                elif any(qt in ft or ft in qt for ft in fact_tags_set):
+                    score += 5
+                elif qt in fact.content.lower():
+                    score += 1
+
+            if score > 0:
+                scored.append((fact, score))
+
+        # Сортировка: сначала по величине score, затем по времени
+        scored.sort(key=lambda item: (item[1], item[0].created_at), reverse=True)
+        return [item[0] for item in scored[:limit]]
+
+    def get_all_ai_conscious_facts(self, name_or_pubkey: str) -> list[AIConsciousFact]:
+        """Возвращает полный список фактов Сознания игрока ИИ."""
+        player = self.get_player_by_name_or_pubkey(name_or_pubkey)
+        if not player or not player.ai_consciousness:
+            return []
+        return list(player.ai_consciousness)
 
     # -----------------------------------------------------------------
     # Метаданные хранилища

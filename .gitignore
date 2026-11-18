@@ -22,6 +22,7 @@ identity*.json
 device_identities*.json
 .pytest_cache/
 scratch*.txt
+portal_volya/storage/screenshots/
 
 # Тяжёлые исходные PNG-полотна (в репозиторий идут идентичные 4K WebP)
 portal_volya/ui_desktop/assets/images/*.png
