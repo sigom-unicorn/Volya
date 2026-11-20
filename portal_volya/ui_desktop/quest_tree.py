@@ -1938,6 +1938,17 @@ class QuestTreeHUD(QWidget):
     def _handle_flow_mouse_move(self, pt: QPointF) -> bool:
         """Обработка наведения на дуги и органы управления Потоками квеста."""
         dist_quest = math.hypot(pt.x() - self.spiral_center.x(), pt.y() - self.spiral_center.y())
+        dx = pt.x() - self.spiral_center.x()
+        dy = pt.y() - self.spiral_center.y()
+        ang_deg = math.degrees(math.atan2(dy, dx))
+
+        c_dia = QPointF(306.6, 54.8)
+        c_conv = QPointF(306.6, 89.2)
+        c_seg = QPointF(self.spiral_center.x(), self.spiral_center.y() + 46.0)
+
+        d_dia = math.hypot(pt.x() - c_dia.x(), pt.y() - c_dia.y())
+        d_conv = math.hypot(pt.x() - c_conv.x(), pt.y() - c_conv.y())
+        d_seg = math.hypot(pt.x() - c_seg.x(), pt.y() - c_seg.y())
 
         # 1. Наведение на сам выбранный квест -> раскрываются ОБЕ дуги
         if dist_quest <= (self.spiral_radius + 6.0):
@@ -1961,11 +1972,6 @@ class QuestTreeHUD(QWidget):
 
         # 3. Интерактив режима выбора потоков (Правая дуга)
         if self._flow_menu_mode in ("both", "select"):
-            c_dia = QPointF(306.6, 54.8)
-            c_conv = QPointF(306.6, 89.2)
-            d_dia = math.hypot(pt.x() - c_dia.x(), pt.y() - c_dia.y())
-            d_conv = math.hypot(pt.x() - c_conv.x(), pt.y() - c_conv.y())
-
             if d_dia <= 15.0:
                 self._hovered_flow_kind_disc = FlowKind.DIALOGUE
                 self._sel_flow_kind = FlowKind.DIALOGUE
@@ -2000,8 +2006,6 @@ class QuestTreeHUD(QWidget):
 
         # 4. Интерактив режима создания потока (Нижняя дуга)
         if self._flow_menu_mode in ("both", "create"):
-            c_seg = QPointF(264.0, 118.0)
-            d_seg = math.hypot(pt.x() - c_seg.x(), pt.y() - c_seg.y())
             if d_seg <= 17.0:
                 self._flow_menu_mode = "create"
                 if pt.x() <= 264.0:
