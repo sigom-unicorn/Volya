@@ -62,7 +62,7 @@ from portal_volya.core.models import (
 from portal_volya.node import VolyaNode
 from portal_volya.ui_desktop.auth_dialogs import make_circular_pixmap
 from portal_volya.ui_desktop.avatar_generator import generate_default_avatar_png
-from portal_volya.ui_desktop.crescent import draw_volumetric_crescent
+from portal_volya.ui_desktop.crescent import draw_volumetric_branch, draw_volumetric_crescent
 
 
 class QuestTreeNode:
@@ -1483,47 +1483,19 @@ class QuestTreeHUD(QWidget):
         w_start: float,
         w_end: float,
         night: bool,
+        alpha_scale: float = 1.0,
+        is_active: bool = True,
     ) -> None:
-        """Отрисовка цельной утончающейся ветви с градиентным объемом и контуром (без сегментов)."""
-        if len(pts) < 2:
-            return
-
-        # 1. Мягкий внешний ореол свечения
-        glow_color = QColor(241, 245, 249, 35) if night else QColor(250, 204, 21, 40)
-        glow_path = self._make_ribbon_path(pts, w_start, w_end, expand=3.0)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(glow_color)
-        painter.drawPath(glow_path)
-
-        # 2. Объемное тело ветви с плавным градиентом вдоль древесины
-        body_path = self._make_ribbon_path(pts, w_start, w_end, expand=0.0)
-        grad = QLinearGradient(pts[0], pts[-1])
-        if night:
-            grad.setColorAt(0.0, QColor(255, 255, 255, 240))
-            grad.setColorAt(0.4, QColor(226, 232, 240, 220))
-            grad.setColorAt(1.0, QColor(148, 163, 184, 190))
-            rim_color = QColor(255, 255, 255, 130)
-            spine_color = QColor(255, 255, 255, 200)
-        else:
-            grad.setColorAt(0.0, QColor(254, 240, 138, 250))
-            grad.setColorAt(0.4, QColor(250, 204, 21, 230))
-            grad.setColorAt(1.0, QColor(217, 119, 6, 190))
-            rim_color = QColor(254, 240, 138, 160)
-            spine_color = QColor(255, 255, 255, 210)
-
-        # 3. Градиентный контур, подчеркивающий объем
-        painter.setBrush(QBrush(grad))
-        painter.setPen(QPen(rim_color, 0.85))
-        painter.drawPath(body_path)
-
-        # 4. Светящаяся центральная жила-сердцевина (непрерывный штрих без стыков)
-        spine = QPainterPath()
-        spine.moveTo(pts[0])
-        for pt in pts[1:]:
-            spine.lineTo(pt)
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(spine_color, 1.1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        painter.drawPath(spine)
+        """Отрисовка цельной утончающейся объемной 3D-ветви с физическим Фонг-шейдингом."""
+        draw_volumetric_branch(
+            painter=painter,
+            pts=pts,
+            w_start=w_start,
+            w_end=w_end,
+            night=night,
+            alpha_scale=alpha_scale,
+            is_active=is_active,
+        )
 
     def _draw_translucent_bridge(
         self,
@@ -1536,29 +1508,17 @@ class QuestTreeHUD(QWidget):
     ) -> None:
         """
         Отрисовка чистого, полупрозрачного и спокойного моста связи в покое.
-        Не мрачный, а чистый, воздушный, в тон живого света Древа.
+        Деликатный 3D-объем с мягкой полупрозрачностью в тон живого света Древа.
         """
-        if len(pts) < 2:
-            return
-
-        alpha = 145
-        glow_alpha = 45
-
-        base_color = QColor(core_color.red(), core_color.green(), core_color.blue(), alpha)
-        halo_color = QColor(glow_color.red(), glow_color.green(), glow_color.blue(), glow_alpha)
-        rim_color = QColor(core_color.red(), core_color.green(), core_color.blue(), int(alpha * 0.85))
-
-        # 1. Мягкий полупрозрачный ореол того же живого цвета (expand=2.0)
-        glow_path = self._make_ribbon_path(pts, w_start, w_end, expand=2.0)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(halo_color)
-        painter.drawPath(glow_path)
-
-        # 2. Чистое полупрозрачное тело ветви (однотонное, без мрачности)
-        body_path = self._make_ribbon_path(pts, w_start, w_end, expand=0.0)
-        painter.setBrush(QBrush(base_color))
-        painter.setPen(QPen(rim_color, 0.6))
-        painter.drawPath(body_path)
+        self._draw_volumetric_branch(
+            painter,
+            pts,
+            w_start,
+            w_end,
+            night=self.is_night(),
+            alpha_scale=0.55,
+            is_active=False,
+        )
 
     def _draw_leaf(
         self,
@@ -1738,9 +1698,7 @@ class QuestTreeHUD(QWidget):
 
         # 2. Живые веточки к узлам (фаза: 0.70 -> 1.0)
         branch_t = min(1.0, max(0.0, (self._unfold_progress - 0.70) / 0.30))
-        branch_glows = []
-        branch_bodies = []
-        branch_spines = []
+        branch_data: List[Tuple[List[QPointF], float, float]] = []
 
         if branch_t > 0.0:
             child_parent_ids = {n.quest.parent_quest_id for n in self.tree_nodes}
@@ -1755,8 +1713,8 @@ class QuestTreeHUD(QWidget):
                 radius = node.current_size / 2.0
                 has_child = node.quest.id in child_parent_ids
 
-                w_start = 3.6 if is_from_stem else 2.6
-                w_end = 2.0 if has_child else 1.0
+                w_start = 3.8 if is_from_stem else 2.8
+                w_end = 2.2 if has_child else 1.2
 
                 bdx = p_quest.x() - p_start.x()
                 bdy = p_quest.y() - p_start.y()
@@ -1821,72 +1779,16 @@ class QuestTreeHUD(QWidget):
                 max_b = max(1, int(N * branch_t))
                 active_pts = full_pts[:max_b + 1]
                 w_cur_end = w_start * (1.0 - branch_t) + w_end * branch_t
-                branch_glows.append(self._make_ribbon_path(active_pts, w_start, w_cur_end, expand=3.0))
-                branch_bodies.append(self._make_ribbon_path(active_pts, w_start, w_cur_end, expand=0.0))
                 if len(active_pts) >= 2:
-                    branch_spines.append(active_pts)
+                    branch_data.append((active_pts, w_start, w_cur_end))
 
-        # 3. Бесшовное объединение ствола и всех ветвей (ликвидация любых стыков и узелков)
-        united_glow = stem_glow
-        for bg in branch_glows:
-            united_glow = united_glow.united(bg)
+        # 3. Отрисовка ствола и ветвей с истинным 3D Фонг-шейдингом
+        night = self.is_night()
+        for b_pts, b_ws, b_we in branch_data:
+            self._draw_volumetric_branch(painter, b_pts, b_ws, b_we, night)
 
-        united_body = stem_body
-        for bb in branch_bodies:
-            united_body = united_body.united(bb)
-
-        if not united_body.isEmpty():
-            night = self.is_night()
-            p_top = pts_stem[0] if pts_stem else QPointF(stem_x, stem_top_y)
-            p_bot = pts_stem[-1] if pts_stem else QPointF(stem_x, current_stem_bottom)
-            grad = QLinearGradient(p_top, p_bot)
-
-            if night:
-                glow_col = QColor(241, 245, 249, 35)
-                rim_color = QColor(255, 255, 255, 130)
-                spine_color = QColor(255, 255, 255, 200)
-                grad.setColorAt(0.0, QColor(255, 255, 255, 240))
-                grad.setColorAt(0.4, QColor(226, 232, 240, 220))
-                grad.setColorAt(1.0, QColor(148, 163, 184, 190))
-            else:
-                glow_col = QColor(250, 204, 21, 40)
-                rim_color = QColor(254, 240, 138, 160)
-                spine_color = QColor(255, 255, 255, 210)
-                grad.setColorAt(0.0, QColor(254, 240, 138, 250))
-                grad.setColorAt(0.4, QColor(250, 204, 21, 230))
-                grad.setColorAt(1.0, QColor(217, 119, 6, 190))
-
-            # 3.1. Единый внешний ореол свечения
-            if not united_glow.isEmpty():
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(glow_col)
-                painter.drawPath(united_glow)
-
-            # 3.2. Единое монолитное тело Древа со световым рельефным кантом
-            painter.setBrush(QBrush(grad))
-            painter.setPen(QPen(rim_color, 0.85))
-            painter.drawPath(united_body)
-
-            # 3.3. Непрерывная спекулярная жила ствола
-            if pts_stem and len(pts_stem) >= 2:
-                spine_stem = QPainterPath()
-                spine_stem.moveTo(pts_stem[0])
-                for p in pts_stem[1:]:
-                    spine_stem.lineTo(p)
-                painter.setBrush(Qt.NoBrush)
-                painter.setPen(QPen(spine_color, 1.1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                painter.drawPath(spine_stem)
-
-            # 3.4. Спекулярные жилы боковых веточек (мягко выходят из ствола без узелков)
-            branch_spine_pen = QPen(spine_color, 1.0, Qt.SolidLine, Qt.FlatCap, Qt.RoundJoin)
-            painter.setPen(branch_spine_pen)
-            for b_pts in branch_spines:
-                if len(b_pts) >= 2:
-                    b_spine = QPainterPath()
-                    b_spine.moveTo(b_pts[1])
-                    for p in b_pts[2:]:
-                        b_spine.lineTo(p)
-                    painter.drawPath(b_spine)
+        if len(pts_stem) >= 2:
+            self._draw_volumetric_branch(painter, pts_stem, w_s, w_e, night)
 
     def _draw_quest_beads(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
         """Отрисовка круглых бусинок квестов, расположенных поверх ветвей по центру."""

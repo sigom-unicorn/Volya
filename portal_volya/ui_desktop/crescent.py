@@ -11,12 +11,12 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, ImageFilter
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
 _crescent_cache: Dict[Tuple, Tuple[QPixmap, float, float]] = {}
 
@@ -223,3 +223,169 @@ def draw_volumetric_crescent(
         hovered=hovered,
     )
     painter.drawPixmap(QPointF(center.x() - ocx, center.y() - ocy), pix)
+
+
+def draw_volumetric_branch(
+    painter: QPainter,
+    pts: List[QPointF],
+    w_start: float,
+    w_end: float,
+    night: bool = False,
+    alpha_scale: float = 1.0,
+    is_active: bool = True,
+) -> None:
+    """
+    Отрисовка объемной 3D-ветви/нити с физическим Фонг-шейдингом (Blinn-Phong) и светотенью.
+    - Цилиндрическая карта высот и нормалей вдоль кривой
+    - Направленный солнечный/лунный свет сверху-слева (азимут 135°, высота 45°)
+    - Спекулярный гребень света вдоль освещенной грани
+    - Бархатная падающая тень снизу-справа (+1.5, +2.5) и мягкий ореол
+    - Полная гармония с серпами месяца в дневном (золото) и ночном (лунное серебро) ладах.
+    """
+    n = len(pts)
+    if n < 2:
+        return
+
+    # Вектор направленного света (сверху-слева) и вектор полупути (Блинн-Фонг)
+    lx, ly, lz = -0.5, -0.5, 0.7071
+    hx, hy, hz = -0.2706, -0.2706, 0.9239
+
+    # 1. Расчет единичных нормалей и плавной ширины вдоль кривой
+    normals: List[Tuple[float, float]] = []
+    widths: List[float] = []
+    for i in range(n):
+        u = i / (n - 1)
+        w = max(0.5, w_start * (1.0 - u) + w_end * u)
+        widths.append(w)
+        if i == 0:
+            tx = pts[1].x() - pts[0].x()
+            ty = pts[1].y() - pts[0].y()
+        elif i == n - 1:
+            tx = pts[-1].x() - pts[-2].x()
+            ty = pts[-1].y() - pts[-2].y()
+        else:
+            tx = pts[i + 1].x() - pts[i - 1].x()
+            ty = pts[i + 1].y() - pts[i - 1].y()
+        tl = math.hypot(tx, ty) or 1.0
+        # Нормаль, направленная влево-вверх от направления роста
+        normals.append((-ty / tl, tx / tl))
+
+    v_slices = np.linspace(-1.0, 1.0, 8)
+    eff_alpha = max(0.0, min(1.0, alpha_scale)) * (1.0 if is_active else 0.65)
+
+    painter.save()
+    painter.setRenderHint(QPainter.Antialiasing, True)
+
+    # 2. Мягкая бархатная падающая тень снизу-справа (смещение +1.5px, +2.5px)
+    shadow_col = (
+        QColor(10, 16, 28, int(45 * eff_alpha))
+        if not night
+        else QColor(0, 0, 0, int(75 * eff_alpha))
+    )
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(shadow_col)
+    poly_sh_left: List[QPointF] = []
+    poly_sh_right: List[QPointF] = []
+    for i in range(n):
+        nx, ny = normals[i]
+        hw = (widths[i] / 2.0) + 1.8
+        poly_sh_left.append(QPointF(pts[i].x() + nx * hw + 1.5, pts[i].y() + ny * hw + 2.5))
+        poly_sh_right.append(QPointF(pts[i].x() - nx * hw + 1.5, pts[i].y() - ny * hw + 2.5))
+    painter.drawPolygon(QPolygonF(poly_sh_left + list(reversed(poly_sh_right))))
+
+    # 3. Мягкий золотой / лунный ореол свечения
+    glow_col = (
+        QColor(254, 240, 138, int(35 * eff_alpha))
+        if not night
+        else QColor(200, 225, 255, int(30 * eff_alpha))
+    )
+    painter.setBrush(glow_col)
+    poly_gl_left: List[QPointF] = []
+    poly_gl_right: List[QPointF] = []
+    for i in range(n):
+        nx, ny = normals[i]
+        hw = (widths[i] / 2.0) + 2.8
+        poly_gl_left.append(QPointF(pts[i].x() + nx * hw, pts[i].y() + ny * hw))
+        poly_gl_right.append(QPointF(pts[i].x() - nx * hw, pts[i].y() - ny * hw))
+    painter.drawPolygon(QPolygonF(poly_gl_left + list(reversed(poly_gl_right))))
+
+    # 4. Объемные 3D-полосы цилиндрической поверхности с расчетом Фонг-освещения
+    for s in range(len(v_slices) - 1):
+        v0 = v_slices[s]
+        v1 = v_slices[s + 1]
+        v_mid = 0.5 * (v0 + v1)
+
+        strip_a: List[QPointF] = []
+        strip_b: List[QPointF] = []
+        for i in range(n):
+            nx, ny = normals[i]
+            r = widths[i] / 2.0
+            strip_a.append(QPointF(pts[i].x() + nx * (v0 * r), pts[i].y() + ny * (v0 * r)))
+            strip_b.append(QPointF(pts[i].x() + nx * (v1 * r), pts[i].y() + ny * (v1 * r)))
+
+        nz = math.sqrt(max(0.0, 1.0 - v_mid**2))
+
+        for i in range(n - 1):
+            nx, ny = normals[i]
+            ndotl = (v_mid * nx) * lx + (v_mid * ny) * ly + nz * lz
+            diff = max(0.0, ndotl)
+
+            ndoth = (v_mid * nx) * hx + (v_mid * ny) * hy + nz * hz
+            spec = max(0.0, ndoth) ** 26
+
+            if not night:
+                # Палитра сакрального золота (как у серпа)
+                r_c = min(255, int(135 + 105 * diff + 250 * spec))
+                g_c = min(255, int(72 + 150 * diff + 250 * spec))
+                b_c = min(255, int(15 + 85 * diff + 240 * spec))
+                a_c = min(255, int((215 + 40 * diff) * eff_alpha))
+            else:
+                # Палитра лунного серебра (как у серпа)
+                r_c = min(255, int(40 + 170 * diff + 250 * spec))
+                g_c = min(255, int(52 + 165 * diff + 250 * spec))
+                b_c = min(255, int(75 + 160 * diff + 250 * spec))
+                a_c = min(255, int((205 + 50 * diff) * eff_alpha))
+
+            color = QColor(r_c, g_c, b_c, a_c)
+            quad = QPolygonF([strip_a[i], strip_a[i + 1], strip_b[i + 1], strip_b[i]])
+            painter.setBrush(color)
+            painter.setPen(QPen(color, 0.4))
+            painter.drawPolygon(quad)
+
+    # 5. Непрерывный спекулярный гребень света вдоль освещенного хребта
+    spine_pts: List[QPointF] = []
+    for i in range(n):
+        nx, ny = normals[i]
+        r = widths[i] / 2.0
+        dot_nh = nx * hx + ny * hy
+        v_opt = max(-0.85, min(0.85, dot_nh * 1.35))
+        spine_pts.append(QPointF(pts[i].x() + nx * (v_opt * r), pts[i].y() + ny * (v_opt * r)))
+
+    spine_path = QPainterPath()
+    spine_path.moveTo(spine_pts[0])
+    for pt in spine_pts[1:]:
+        spine_path.lineTo(pt)
+
+    sp_col = (
+        QColor(255, 255, 245, int(220 * eff_alpha))
+        if not night
+        else QColor(255, 255, 255, int(230 * eff_alpha))
+    )
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(sp_col, 0.85, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    painter.drawPath(spine_path)
+
+    # 6. Плавное скругление основания и верхушки ветви
+    if w_start > 1.8:
+        nx0, ny0 = normals[0]
+        ndotl0 = max(0.0, nx0 * lx + ny0 * ly + 0.7 * lz)
+        cap_col = (
+            QColor(min(255, int(180 + 75 * ndotl0)), min(255, int(130 + 110 * ndotl0)), 40, int(225 * eff_alpha))
+            if not night
+            else QColor(min(255, int(150 + 95 * ndotl0)), min(255, int(170 + 80 * ndotl0)), 210, int(225 * eff_alpha))
+        )
+        painter.setBrush(cap_col)
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(pts[0], w_start * 0.45, w_start * 0.45)
+
+    painter.restore()
