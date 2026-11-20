@@ -172,14 +172,8 @@ class LadomirBridgeClient:
         if not self.is_connected():
             return {"status": "portal_offline"}
 
-        fid = flow_id or self.get_active_flow_id()
         known_ids = set()
-        if fid:
-            try:
-                drops = self.get_drops(fid)
-                known_ids = {d.id for d in drops}
-            except Exception:
-                pass
+        initialized_fid = None
 
         ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
         ignored_pk = ignore_author_pubkey or ladomir_pk
@@ -192,6 +186,18 @@ class LadomirBridgeClient:
             if not current_fid:
                 time.sleep(0.4)
                 continue
+
+            # При первом обнаружении открытого потока фиксируем все существующие капли
+            if initialized_fid != current_fid:
+                try:
+                    existing_drops = self.get_drops(current_fid)
+                    known_ids = {d.id for d in existing_drops}
+                    initialized_fid = current_fid
+                    time.sleep(0.4)
+                    continue
+                except Exception:
+                    time.sleep(0.4)
+                    continue
 
             try:
                 current_drops = self.get_drops(current_fid)
