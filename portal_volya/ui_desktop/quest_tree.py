@@ -1961,9 +1961,9 @@ class QuestTreeHUD(QWidget):
         c_sub_dia = QPointF(362.5, 54.0)                    # Кружок Диалог
         c_sub_conv = QPointF(362.5, 90.0)                   # Кружок Беседа
 
-        # Звёзды на обратном серпе сотворения (справа-снизу)
-        c_star_dia = QPointF(318.5, 182.0)                  # Звезда Диалог
-        c_star_conv = QPointF(318.5, 218.0)                 # Звезда Беседа
+        # Звёзды на обратном серпе сотворения (строго под квестом)
+        c_star_dia = QPointF(270.5, 197.0)                  # Звезда Диалог (угол 220°)
+        c_star_conv = QPointF(270.5, 233.0)                 # Звезда Беседа (угол 140°)
 
         d_view = math.hypot(pt.x() - c_btn_view.x(), pt.y() - c_btn_view.y())
         d_create = math.hypot(pt.x() - c_btn_create.x(), pt.y() - c_btn_create.y())
@@ -2120,7 +2120,7 @@ class QuestTreeHUD(QWidget):
                 in_active_zone = True
         elif self._flow_create_active:
             # Зона обратного серпа сотворения и полей ввода
-            if (260.0 <= pt.x() <= 620.0) and (110.0 <= pt.y() <= 480.0):
+            if (220.0 <= pt.x() <= 620.0) and (110.0 <= pt.y() <= 480.0):
                 in_active_zone = True
 
         if not in_active_zone and self._flow_menu_mode != "none":
@@ -2261,7 +2261,7 @@ class QuestTreeHUD(QWidget):
                     self._create_step = "title"
                     self.flow_title_input.clear()
                     self.flow_title_input.setPlaceholderText("Имя диалога...")
-                    self.flow_title_input.setGeometry(356, 168, 190, 28)
+                    self.flow_title_input.setGeometry(356, 183, 190, 28)
                     self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
                     self.flow_next_btn.show()
                     self.flow_title_input.setVisible(True)
@@ -2281,7 +2281,7 @@ class QuestTreeHUD(QWidget):
                     self._create_step = "title"
                     self.flow_title_input.clear()
                     self.flow_title_input.setPlaceholderText("Имя беседы...")
-                    self.flow_title_input.setGeometry(356, 204, 190, 28)
+                    self.flow_title_input.setGeometry(356, 219, 190, 28)
                     self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
                     self.flow_next_btn.show()
                     self.flow_title_input.setVisible(True)
@@ -2354,12 +2354,13 @@ class QuestTreeHUD(QWidget):
             rev_view_r = 28.0
             p_view_belly = QPointF(rev_view_center.x() - rev_view_r, rev_view_center.y())  # (356.0, 72.0)
 
-            # Тонкая объемная веточка от c_btn_view к чреву обратного серпа
-            branch_view_pts = [
-                c_btn_view,
-                QPointF((c_btn_view.x() + p_view_belly.x()) * 0.5, 72.0),
-                p_view_belly,
-            ]
+            # Живая органическая веточка от c_btn_view к чреву обратного серпа
+            branch_view_pts = []
+            for i in range(25):
+                t = i / 24.0
+                vx = c_btn_view.x() + (p_view_belly.x() - c_btn_view.x()) * t
+                vy = 72.0 + 1.4 * math.sin(t * math.pi)
+                branch_view_pts.append(QPointF(vx, vy))
             self._draw_volumetric_branch(painter, branch_view_pts, 2.4, 1.6, night)
 
             # Обратный серп просмотра (чрево на 180°, рожки вправо)
@@ -2398,20 +2399,24 @@ class QuestTreeHUD(QWidget):
             self._draw_circle_control(painter, c_sub_conv, 11.5, "conv", is_sub_conv_act, is_sub_conv_hov, glow_color, core_color, night)
 
         # -------------------------------------------------------------
-        # ВЕТВЬ 2: СОТВОРЕНИЕ ПОТОКА (справа-снизу)
+        # ВЕТВЬ 2: СОТВОРЕНИЕ ПОТОКА (строго вниз)
         # -------------------------------------------------------------
         if self._flow_create_active:
-            rev_create_center = QPointF(340.0, 200.0)
+            rev_create_center = QPointF(292.0, 215.0)
             rev_create_r = 28.0
-            p_create_belly = QPointF(rev_create_center.x() - rev_create_r, rev_create_center.y())  # (312.0, 200.0)
+            p_create_belly = QPointF(rev_create_center.x() - rev_create_r, rev_create_center.y())  # (264.0, 215.0) — строго на оси X=264!
 
-            # Тонкая объемная веточка, изгибающаяся плавно вправо-вниз
-            branch_create_pts = [
-                c_btn_create,
-                QPointF(c_btn_create.x(), c_btn_create.y() + 40.0),
-                QPointF(p_create_belly.x() - 25.0, p_create_belly.y() - 5.0),
-                p_create_belly,
-            ]
+            # Живая органическая веточка Безье (35 точек), естественно изгибающаяся строго вниз
+            branch_create_pts = []
+            p_s = c_btn_create
+            p_c1 = QPointF(c_btn_create.x() + 1.0, c_btn_create.y() + 42.0)
+            p_c2 = QPointF(p_create_belly.x() - 8.0, p_create_belly.y() - 30.0)
+            p_e = p_create_belly
+            for i in range(35):
+                t = i / 34.0
+                bx = (1-t)**3 * p_s.x() + 3*(1-t)**2*t * p_c1.x() + 3*(1-t)*t**2 * p_c2.x() + t**3 * p_e.x()
+                by = (1-t)**3 * p_s.y() + 3*(1-t)**2*t * p_c1.y() + 3*(1-t)*t**2 * p_c2.y() + t**3 * p_e.y()
+                branch_create_pts.append(QPointF(bx, by))
             self._draw_volumetric_branch(painter, branch_create_pts, 2.4, 1.6, night)
 
             # Обратный серп сотворения
@@ -2431,17 +2436,18 @@ class QuestTreeHUD(QWidget):
             )
 
             # Две 6-конечные звёздочки на обратном серпе сотворения
-            c_star_dia = QPointF(318.5, 182.0)
-            c_star_conv = QPointF(318.5, 218.0)
+            c_star_dia = QPointF(270.5, 197.0)
+            c_star_conv = QPointF(270.5, 233.0)
 
             # Если идёт сотворение — веточка к полю ввода
             if self._create_step in ("title", "players") and self._create_flow_kind:
                 active_star = c_star_dia if self._create_flow_kind == FlowKind.DIALOGUE else c_star_conv
-                stem_pts = [
-                    active_star,
-                    QPointF(active_star.x() + 20.0, active_star.y()),
-                    QPointF(356.0, active_star.y()),
-                ]
+                stem_pts = []
+                for i in range(20):
+                    t = i / 19.0
+                    sx = active_star.x() + (356.0 - active_star.x()) * t
+                    sy = active_star.y() + 1.2 * math.sin(t * math.pi)
+                    stem_pts.append(QPointF(sx, sy))
                 self._draw_volumetric_branch(painter, stem_pts, 2.0, 1.4, night)
 
                 if self._create_step == "players":
