@@ -163,6 +163,12 @@ class LadomirBridgeClient:
         Завершается, как только появляется новая капля от собеседника,
         либо при закрытии Портала, либо по тайм-ауту.
         """
+        start_time = time.time()
+
+        # Если портал временно оффлайн (например, при перезапуске), ждем его запуска
+        while not self.is_connected() and (time.time() - start_time < timeout):
+            time.sleep(0.5)
+
         if not self.is_connected():
             return {"status": "portal_offline"}
 
@@ -175,7 +181,6 @@ class LadomirBridgeClient:
             except Exception:
                 pass
 
-        start_time = time.time()
         ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
         ignored_pk = ignore_author_pubkey or ladomir_pk
 
