@@ -1544,7 +1544,7 @@ class QuestTreeHUD(QWidget):
         """
         Протягивание живой утончающейся веточки от правой дуги аватарки к левому краю Истока («Воля»).
         """
-        p_start = QPointF(self.avatar_center.x() + self.arc_radius - 2.5, self.avatar_center.y())
+        p_start = QPointF(self.avatar_center.x() + self.arc_radius + 0.5, self.avatar_center.y())
         p_target = QPointF(self.spiral_center.x() - self.spiral_radius + 2.5, self.spiral_center.y())
 
         # Если квест уже выбран, или идёт анимация перелёта — веточка распущена полностью
