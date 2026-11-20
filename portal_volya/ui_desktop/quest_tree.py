@@ -1289,17 +1289,163 @@ class QuestTreeHUD(QWidget):
 
         painter.end()
 
-    def _draw_avatar_arc(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
-        """Отрисовка дуги справа от аватарки игрока."""
-        arc_box = QRectF(
-            self.avatar_center.x() - self.arc_radius,
-            self.avatar_center.y() - self.arc_radius,
-            2 * self.arc_radius,
-            2 * self.arc_radius,
-        )
-        start_angle = int(-45 * 16)
-        span_angle = int(90 * 16)
+    def _make_crescent_path(
+        self,
+        center: QPointF,
+        r_mid: float,
+        start_deg: float,
+        span_deg: float,
+        t_out: float = 3.2,
+        t_in: float = 3.6,
+        power: float = 0.92,
+        steps: int = 48,
+    ) -> Tuple[QPainterPath, List[QPointF], List[QPointF], List[QPointF]]:
+        """Построение сакральной геометрии серпа месяца (утолщение в чреве, игловидные рожки)."""
+        mid_deg = start_deg + span_deg / 2.0
+        half_span = span_deg / 2.0
+        outer_pts: List[QPointF] = []
+        inner_pts: List[QPointF] = []
+        ridge_pts: List[QPointF] = []
 
+        for i in range(steps + 1):
+            u = i / steps
+            ang_deg = start_deg + span_deg * u
+            phi = ang_deg - mid_deg
+            factor = math.cos((math.pi / 2.0) * (phi / half_span))
+            factor = max(0.0, factor) ** power
+
+            rad = math.radians(ang_deg)
+            cos_a = math.cos(rad)
+            sin_a = math.sin(rad)
+
+            r_o = r_mid + t_out * factor
+            r_i = r_mid - t_in * factor
+            r_r = r_mid + (t_out * 0.22 - t_in * 0.1) * factor
+
+            outer_pts.append(QPointF(center.x() + r_o * cos_a, center.y() + r_o * sin_a))
+            inner_pts.append(QPointF(center.x() + r_i * cos_a, center.y() + r_i * sin_a))
+            ridge_pts.append(QPointF(center.x() + r_r * cos_a, center.y() + r_r * sin_a))
+
+        path = QPainterPath()
+        path.moveTo(outer_pts[0])
+        for pt in outer_pts[1:]:
+            path.lineTo(pt)
+        for pt in reversed(inner_pts):
+            path.lineTo(pt)
+        path.closeSubpath()
+        return path, outer_pts, inner_pts, ridge_pts
+
+    def _draw_volumetric_crescent(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        r_mid: float,
+        start_deg: float,
+        span_deg: float,
+        t_out: float,
+        t_in: float,
+        glow_color: QColor,
+        core_color: QColor,
+        night: bool,
+        is_active: bool = True,
+        hovered: bool = False,
+    ) -> None:
+        """Отрисовка 3D объемного серпа месяца с игрой света, фаской и ореолом."""
+        path, outer_pts, inner_pts, ridge_pts = self._make_crescent_path(
+            center, r_mid, start_deg, span_deg, t_out, t_in
+        )
+
+        state_alpha = 1.0 if is_active else 0.65
+        glow_base = 150 if hovered else 105
+
+        # 1. Мягкое объемное свечение (halo / glow)
+        halo_path_wide, _, _, _ = self._make_crescent_path(
+            center, r_mid, start_deg, span_deg, t_out + 4.8, t_in + 4.8
+        )
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(
+            QColor(
+                glow_color.red(),
+                glow_color.green(),
+                glow_color.blue(),
+                int(glow_base * 0.35 * state_alpha),
+            )
+        )
+        painter.drawPath(halo_path_wide)
+
+        halo_path_tight, _, _, _ = self._make_crescent_path(
+            center, r_mid, start_deg, span_deg, t_out + 2.2, t_in + 2.2
+        )
+        painter.setBrush(
+            QColor(
+                glow_color.red(),
+                glow_color.green(),
+                glow_color.blue(),
+                int(glow_base * 0.75 * state_alpha),
+            )
+        )
+        painter.drawPath(halo_path_tight)
+
+        # 2. Мягкая бархатная тень под серпом (ambient depth)
+        shadow_path, _, _, _ = self._make_crescent_path(
+            QPointF(center.x() + 1.2, center.y() + 1.6), r_mid, start_deg, span_deg, t_out, t_in
+        )
+        painter.setBrush(QColor(6, 9, 18, int(120 * state_alpha)))
+        painter.drawPath(shadow_path)
+
+        # 3. Основное объемное 3D-тело серпа (радиальный профиль)
+        rad_grad = QRadialGradient(center, r_mid + t_out + 1.2)
+        r_in_norm = (r_mid - t_in) / (r_mid + t_out + 1.2)
+        r_ridge_norm = r_mid / (r_mid + t_out + 1.2)
+        r_out_norm = (r_mid + t_out) / (r_mid + t_out + 1.2)
+
+        if night:
+            c_deep = QColor(51, 65, 85, int(235 * state_alpha))       # slate deep
+            c_ridge = QColor(255, 255, 255, int(255 * state_alpha))    # pure white
+            c_rim = QColor(148, 163, 184, int(245 * state_alpha))     # silver-grey
+            c_crest = QColor(255, 255, 255, int(240 * state_alpha))
+        else:
+            c_deep = QColor(180, 83, 9, int(235 * state_alpha))       # deep amber/bronze
+            c_ridge = QColor(255, 255, 245, int(255 * state_alpha))   # solar highlight
+            c_rim = QColor(217, 119, 6, int(245 * state_alpha))       # warm gold
+            c_crest = QColor(255, 255, 255, int(230 * state_alpha))
+
+        rad_grad.setColorAt(max(0.0, r_in_norm * 0.95), c_deep)
+        rad_grad.setColorAt(r_in_norm, c_deep)
+        rad_grad.setColorAt(r_ridge_norm, c_ridge)
+        rad_grad.setColorAt(r_out_norm, c_rim)
+        rad_grad.setColorAt(1.0, c_rim)
+
+        painter.setBrush(QBrush(rad_grad))
+        painter.setPen(Qt.NoPen)
+        painter.drawPath(path)
+
+        # 4. Световой хребет (сверкающий гребень месяца)
+        ridge_path = QPainterPath()
+        ridge_path.moveTo(ridge_pts[0])
+        for p in ridge_pts[1:]:
+            ridge_path.lineTo(p)
+        ridge_pen = QPen(c_crest, 1.4 if hovered else 1.1, Qt.SolidLine, Qt.RoundCap)
+        painter.setPen(ridge_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(ridge_path)
+
+        # 5. Тонкий световой кант (фаска) по внешнему контуру
+        outer_path = QPainterPath()
+        outer_path.moveTo(outer_pts[0])
+        for p in outer_pts[1:]:
+            outer_path.lineTo(p)
+        outer_pen = QPen(
+            QColor(core_color.red(), core_color.green(), core_color.blue(), int(210 * state_alpha)),
+            0.8,
+            Qt.SolidLine,
+            Qt.RoundCap,
+        )
+        painter.setPen(outer_pen)
+        painter.drawPath(outer_path)
+
+    def _draw_avatar_arc(self, painter: QPainter, glow_color: QColor, core_color: QColor) -> None:
+        """Отрисовка объемного серпа месяца справа от аватарки игрока."""
         # Активное состояние выбора: до первого выбора, при открытом дереве, наведении или перелёте
         is_active_selection = (
             not self.has_selected_quest
@@ -1310,61 +1456,21 @@ class QuestTreeHUD(QWidget):
             or self._gliding_node is not None
             or self._pending_selection_node is not None
         )
-
-        if is_active_selection:
-            # АКТИВНОЕ ВЫБИРАНИЕ / ПРИЗЫВ: дуга горит ярко и заново сияет в полную силу
-            hovered = self._arc_hovered or self._avatar_hovered
-            alpha = 255 if hovered else 225
-            glow_alpha = 180 if hovered else 140
-
-            # 1. Широкий внешний ореол яркого свечения (8.6px)
-            glow_pen_wide = QPen(
-                QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(glow_alpha * 0.45)),
-                8.6,
-                Qt.SolidLine,
-                Qt.RoundCap,
-            )
-            painter.setPen(glow_pen_wide)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-            # 2. Плотный ореол свечения (5.6px)
-            glow_pen_inner = QPen(
-                QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(glow_alpha * 0.85)),
-                5.6,
-                Qt.SolidLine,
-                Qt.RoundCap,
-            )
-            painter.setPen(glow_pen_inner)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-            # 3. Сияющее белое/золотое ядро дуги (3.4px)
-            core_pen = QPen(
-                QColor(core_color.red(), core_color.green(), core_color.blue(), alpha),
-                3.4,
-                Qt.SolidLine,
-                Qt.RoundCap,
-            )
-            painter.setPen(core_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-        else:
-            # ЗАТУХАНИЕ ПОСЛЕ ВЫБОРА (в покое при закрытом дереве):
-            # Не мрачное, а чистое, более прозрачное и слегка менее яркое (воздушное)
-            alpha = 145
-            glow_alpha = 50
-
-            base_color = QColor(core_color.red(), core_color.green(), core_color.blue(), alpha)
-            halo_color = QColor(glow_color.red(), glow_color.green(), glow_color.blue(), glow_alpha)
-
-            # 1. Мягкий полупрозрачный ореол (5.4px)
-            glow_pen = QPen(halo_color, 5.4, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(glow_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-            # 2. Деликатное прозрачное ядро (3.2px)
-            core_pen = QPen(base_color, 3.2, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(core_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
+        hovered = self._arc_hovered or self._avatar_hovered
+        self._draw_volumetric_crescent(
+            painter,
+            self.avatar_center,
+            self.arc_radius,
+            -45.0,
+            90.0,
+            t_out=3.6,
+            t_in=4.0,
+            glow_color=glow_color,
+            core_color=core_color,
+            night=self.is_night(),
+            is_active=is_active_selection,
+            hovered=hovered,
+        )
 
     def _make_ribbon_path(
         self, pts: List[QPointF], w_start: float, w_end: float, expand: float = 0.0
@@ -2237,19 +2343,22 @@ class QuestTreeHUD(QWidget):
         core_color: QColor,
         night: bool,
     ) -> None:
-        """Отрисовка правой дуги выбора потока с кружками-типами (Диалог и Беседа) и ветками."""
-        arc_box = QRectF(center.x() - radius, center.y() - radius, 2 * radius, 2 * radius)
-        start_angle = int(-45 * 16)
-        span_angle = int(90 * 16)
-
-        # Ореол и светящееся ядро дуги
-        glow_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 100), 4.8, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(glow_pen)
-        painter.drawArc(arc_box, start_angle, span_angle)
-
-        core_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), 230), 2.2, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(core_pen)
-        painter.drawArc(arc_box, start_angle, span_angle)
+        """Отрисовка правой дуги выбора потока в виде объемного серпа с кружками-типами (Диалог и Беседа)."""
+        is_hovered = (self._hovered_flow_kind_disc is not None or self._sel_flow_kind is not None)
+        self._draw_volumetric_crescent(
+            painter,
+            center,
+            radius,
+            -45.0,
+            90.0,
+            t_out=3.0,
+            t_in=3.4,
+            glow_color=glow_color,
+            core_color=core_color,
+            night=night,
+            is_active=True,
+            hovered=is_hovered,
+        )
 
         # Точки кружков на дуге:
         # Диалог (-22°) и Беседа (+22°)
@@ -2447,22 +2556,25 @@ class QuestTreeHUD(QWidget):
         core_color: QColor,
         night: bool,
     ) -> None:
-        """Отрисовка нижней дуги создания потока с разделенным на сегменты кружком."""
-        arc_box = QRectF(center.x() - radius, center.y() - radius, 2 * radius, 2 * radius)
-        start_angle = int(-135 * 16)
-        span_angle = int(90 * 16)
-
+        """Отрисовка нижней дуги создания потока в виде объемного серпа с разделенным на сегменты кружком."""
         # Если сектор активирован (выбран тип потока) — дуга не рисуется по слову Сига!
         is_activated = (self._create_flow_kind is not None or self._create_step in ("title", "players"))
         if not is_activated:
-            # Ореол и светящееся ядро дуги (видны только до активизации сектора)
-            glow_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 100), 4.8, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(glow_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-            core_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), 230), 2.2, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(core_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
+            is_hovered = (self._hovered_create_segment is not None)
+            self._draw_volumetric_crescent(
+                painter,
+                center,
+                radius,
+                45.0,
+                90.0,
+                t_out=3.0,
+                t_in=3.4,
+                glow_color=glow_color,
+                core_color=core_color,
+                night=night,
+                is_active=True,
+                hovered=is_hovered,
+            )
 
         # Центр сегментированного кружка на нижней дуге (90°)
         c_seg = QPointF(center.x(), center.y() + radius)  # (264.0, 118.0)
