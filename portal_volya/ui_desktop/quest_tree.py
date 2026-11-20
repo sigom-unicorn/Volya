@@ -62,7 +62,11 @@ from portal_volya.core.models import (
 from portal_volya.node import VolyaNode
 from portal_volya.ui_desktop.auth_dialogs import make_circular_pixmap
 from portal_volya.ui_desktop.avatar_generator import generate_default_avatar_png
-from portal_volya.ui_desktop.crescent import draw_volumetric_branch, draw_volumetric_crescent
+from portal_volya.ui_desktop.crescent import (
+    create_hexagram_path,
+    draw_volumetric_branch,
+    draw_volumetric_crescent,
+)
 
 
 class QuestTreeNode:
@@ -255,6 +259,8 @@ class QuestTreeHUD(QWidget):
         # Состояния дуг Потоков выбранного квеста (Выбор и Создание)
         # ---------------------------------------------------------
         self._flow_menu_mode: str = "none"  # 'none' | 'both' | 'select' | 'create'
+        self._flow_view_active: bool = False   # раскрыта ли ветвь просмотра потоков
+        self._flow_create_active: bool = False # раскрыта ли ветвь создания нового потока
         self._sel_flow_kind: Optional[FlowKind] = None
         self._create_flow_kind: Optional[FlowKind] = None
         self._create_step: str = "idle"  # 'idle' | 'title' | 'players'
@@ -264,6 +270,7 @@ class QuestTreeHUD(QWidget):
         self._quest_players_cache: list[Player] = []
         self._player_avatar_cache: dict[str, QPixmap] = {}
 
+        self._hovered_flow_btn: Optional[str] = None  # 'view_main' | 'create_main' | 'sub_view_dia' | 'sub_view_conv' | 'sub_create_dia' | 'sub_create_conv'
         self._hovered_flow_kind_disc: Optional[FlowKind] = None
         self._hovered_flow_item: Optional[QuestFlow] = None
         self._hovered_create_segment: Optional[FlowKind] = None
@@ -545,6 +552,11 @@ class QuestTreeHUD(QWidget):
     def _on_flow_menu_close_timeout(self) -> None:
         # Если курсор не в интерактивных зонах — закрываем меню потоков
         self._flow_menu_mode = "none"
+        self._flow_view_active = False
+        self._flow_create_active = False
+        self._hovered_flow_btn = None
+        self._sel_flow_kind = None
+        self._create_flow_kind = None
         self._hovered_flow_kind_disc = None
         self._hovered_flow_item = None
         self._hovered_create_segment = None
@@ -1937,203 +1949,273 @@ class QuestTreeHUD(QWidget):
 
     def _handle_flow_mouse_move(self, pt: QPointF) -> bool:
         """Обработка наведения на дуги и органы управления Потоками квеста."""
-        dist_quest = math.hypot(pt.x() - self.spiral_center.x(), pt.y() - self.spiral_center.y())
-        dx = pt.x() - self.spiral_center.x()
-        dy = pt.y() - self.spiral_center.y()
-        ang_deg = math.degrees(math.atan2(dy, dx))
+        quest_cx = self.spiral_center.x()
+        quest_cy = self.spiral_center.y()
+        dist_quest = math.hypot(pt.x() - quest_cx, pt.y() - quest_cy)
 
-        c_dia = QPointF(306.6, 54.8)
-        c_conv = QPointF(306.6, 89.2)
-        c_seg = QPointF(self.spiral_center.x(), self.spiral_center.y() + 46.0)
+        # Главные кнопки на серпе квеста
+        c_btn_view = QPointF(quest_cx + 46.0, quest_cy)     # Правая круглая кнопка (0°)
+        c_btn_create = QPointF(quest_cx, quest_cy + 46.0)   # Нижняя 6-конечная звезда (+90°)
 
-        d_dia = math.hypot(pt.x() - c_dia.x(), pt.y() - c_dia.y())
-        d_conv = math.hypot(pt.x() - c_conv.x(), pt.y() - c_conv.y())
-        d_seg = math.hypot(pt.x() - c_seg.x(), pt.y() - c_seg.y())
+        # Кнопки на обратном серпе просмотра (справа)
+        c_sub_dia = QPointF(362.5, 54.0)                    # Кружок Диалог
+        c_sub_conv = QPointF(362.5, 90.0)                   # Кружок Беседа
 
-        # 1. Наведение на сам выбранный квест -> раскрывается единый месяц
+        # Звёзды на обратном серпе сотворения (справа-снизу)
+        c_star_dia = QPointF(318.5, 182.0)                  # Звезда Диалог
+        c_star_conv = QPointF(318.5, 218.0)                 # Звезда Беседа
+
+        d_view = math.hypot(pt.x() - c_btn_view.x(), pt.y() - c_btn_view.y())
+        d_create = math.hypot(pt.x() - c_btn_create.x(), pt.y() - c_btn_create.y())
+
+        # 1. Наведение на сам выбранный квест -> раскрывается серп квеста
         if dist_quest <= (self.spiral_radius + 4.0):
             if self._flow_menu_mode == "none":
                 self._flow_menu_mode = "both"
                 self.refresh_flows_and_players()
-            # Когда указатель на аватаре квеста — ни одна кнопка не активна и ветви скрыты
+            self._hovered_flow_btn = None
             self._hovered_flow_kind_disc = None
-            self._sel_flow_kind = None
             self._hovered_create_segment = None
             self._flow_close_timer.stop()
             self.setCursor(Qt.PointingHandCursor)
             return True
 
-        # 2. Интерактив кнопок на серпе месяца:
-        if d_dia <= 15.0:
-            # Наведение на «Диалог» (-22°) -> кнопка активна, ветвь раскрыта
+        # 2. Главная круглая кнопка справа (Просмотр потоков)
+        if d_view <= 15.0:
+            self._hovered_flow_btn = "view_main"
             self._hovered_flow_kind_disc = FlowKind.DIALOGUE
-            self._sel_flow_kind = FlowKind.DIALOGUE
-            self._flow_menu_mode = "select"
-            self._hovered_create_segment = None
             self._flow_close_timer.stop()
             self.setCursor(Qt.PointingHandCursor)
             return True
-        elif d_conv <= 15.0:
-            # Наведение на «Беседа» (+22°) -> кнопка активна, ветвь раскрыта
-            self._hovered_flow_kind_disc = FlowKind.CONVERSATION
-            self._sel_flow_kind = FlowKind.CONVERSATION
-            self._flow_menu_mode = "select"
-            self._hovered_create_segment = None
+
+        # 3. Главная 6-конечная звезда снизу (Сотворение потоков)
+        if d_create <= 16.0:
+            self._hovered_flow_btn = "create_main"
+            self._hovered_create_segment = FlowKind.DIALOGUE
             self._flow_close_timer.stop()
             self.setCursor(Qt.PointingHandCursor)
             return True
-        elif d_seg <= 17.0:
-            # Наведение на сегментированный диск создания (+90°)
-            self._flow_menu_mode = "create"
-            self._sel_flow_kind = None
-            self._hovered_flow_kind_disc = None
-            if pt.x() <= 264.0:
-                self._hovered_create_segment = FlowKind.DIALOGUE
-            else:
-                self._hovered_create_segment = FlowKind.CONVERSATION
-            self._flow_close_timer.stop()
-            self.setCursor(Qt.PointingHandCursor)
-            return True
-        else:
-            self._hovered_create_segment = None
 
-        # 3. Интерактив раскрытого списка потоков (если выбрана категория)
-        if self._sel_flow_kind:
-            flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
-            start_y = 54.8 if self._sel_flow_kind == FlowKind.DIALOGUE else 89.2
-            stem_x = 392.0
-            count = max(1, len(flows))
-            y_last = (start_y + 48.0) + count * 36.0 + 20.0
+        # 4. Если активна ветвь просмотра потоков
+        if self._flow_view_active:
+            d_sub_dia = math.hypot(pt.x() - c_sub_dia.x(), pt.y() - c_sub_dia.y())
+            d_sub_conv = math.hypot(pt.x() - c_sub_conv.x(), pt.y() - c_sub_conv.y())
 
-            # Коридор от кнопки к списку и сам список
-            in_bridge = (300.0 <= pt.x() <= (stem_x + 35.0) and abs(pt.y() - start_y) <= 22.0)
-            in_list = (stem_x <= pt.x() <= (stem_x + 250.0) and (start_y + 20.0) <= pt.y() <= y_last)
-
-            if in_bridge or in_list:
-                self._hovered_flow_item = None
-                for idx, f in enumerate(flows):
-                    y_f = (start_y + 48.0) + idx * 36.0
-                    r_f = QRectF(stem_x + 30.0, y_f - 14.0, 200.0, 28.0)
-                    if r_f.contains(pt):
-                        self._hovered_flow_item = f
-                        break
+            if d_sub_dia <= 14.0:
+                self._hovered_flow_btn = "sub_view_dia"
+                self._hovered_flow_kind_disc = FlowKind.DIALOGUE
                 self._flow_close_timer.stop()
-                self.setCursor(Qt.PointingHandCursor if self._hovered_flow_item else Qt.ArrowCursor)
+                self.setCursor(Qt.PointingHandCursor)
                 return True
-            else:
-                # Курсор вышел из зоны списка и кнопки — ветвь скрывается, кнопка гаснет!
-                self._sel_flow_kind = None
-                self._hovered_flow_item = None
-                self._hovered_flow_kind_disc = None
-
-        # 4. Проверка создания потока
-        if self._create_step in ("title", "players"):
-            # Проверка кнопки '>' перехода к игрокам
-            c_next_in = QPointF(self.flow_title_input.x() + self.flow_title_input.width() - 14.0, 184.0)
-            if math.hypot(pt.x() - c_next_in.x(), pt.y() - c_next_in.y()) <= 15.0 or (330.0 <= pt.x() <= 385.0 and 168.0 <= pt.y() <= 200.0):
-                self._hovered_create_next_btn = True
+            elif d_sub_conv <= 14.0:
+                self._hovered_flow_btn = "sub_view_conv"
+                self._hovered_flow_kind_disc = FlowKind.CONVERSATION
                 self._flow_close_timer.stop()
                 self.setCursor(Qt.PointingHandCursor)
                 return True
             else:
-                self._hovered_create_next_btn = False
+                self._hovered_flow_btn = None
 
-            # Проверка кнопки подтверждения '✔' для беседы
-            if self._create_step == "players" and self._create_flow_kind == FlowKind.CONVERSATION:
-                c_conf = QPointF(420.0, 202.0)
-                if math.hypot(pt.x() - c_conf.x(), pt.y() - c_conf.y()) <= 15.0:
-                    self._hovered_create_confirm_btn = True
+            # Интерактив раскрытого списка потоков
+            if self._sel_flow_kind:
+                flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
+                start_y = c_sub_dia.y() if self._sel_flow_kind == FlowKind.DIALOGUE else c_sub_conv.y()
+                stem_x = 440.0
+                count = max(1, len(flows))
+                y_last = (start_y + 40.0) + count * 36.0 + 20.0
+
+                in_bridge = (360.0 <= pt.x() <= (stem_x + 20.0) and abs(pt.y() - start_y) <= 22.0)
+                in_list = (stem_x <= pt.x() <= (stem_x + 240.0) and (start_y + 15.0) <= pt.y() <= y_last)
+
+                if in_bridge or in_list:
+                    self._hovered_flow_item = None
+                    for idx, f in enumerate(flows):
+                        y_f = (start_y + 40.0) + idx * 36.0
+                        r_f = QRectF(stem_x + 10.0, y_f - 14.0, 200.0, 28.0)
+                        if r_f.contains(pt):
+                            self._hovered_flow_item = f
+                            break
+                    self._flow_close_timer.stop()
+                    self.setCursor(Qt.PointingHandCursor if self._hovered_flow_item else Qt.ArrowCursor)
+                    return True
+                else:
+                    self._hovered_flow_item = None
+
+        # 5. Если активна ветвь сотворения потока
+        if self._flow_create_active:
+            d_star_dia = math.hypot(pt.x() - c_star_dia.x(), pt.y() - c_star_dia.y())
+            d_star_conv = math.hypot(pt.x() - c_star_conv.x(), pt.y() - c_star_conv.y())
+
+            if d_star_dia <= 15.0:
+                self._hovered_flow_btn = "sub_create_dia"
+                self._hovered_create_segment = FlowKind.DIALOGUE
+                self._flow_close_timer.stop()
+                self.setCursor(Qt.PointingHandCursor)
+                return True
+            elif d_star_conv <= 15.0:
+                self._hovered_flow_btn = "sub_create_conv"
+                self._hovered_create_segment = FlowKind.CONVERSATION
+                self._flow_close_timer.stop()
+                self.setCursor(Qt.PointingHandCursor)
+                return True
+            else:
+                self._hovered_flow_btn = None
+
+            # Интерактив шагов создания (ввод названия и выбор игроков)
+            if self._create_step in ("title", "players"):
+                # Кнопка '>'
+                c_next_in = QPointF(self.flow_title_input.x() + self.flow_title_input.width() - 14.0, self.flow_title_input.y() + 14.0)
+                if math.hypot(pt.x() - c_next_in.x(), pt.y() - c_next_in.y()) <= 15.0:
+                    self._hovered_flow_btn = None
+                    self._hovered_create_next_btn = True
                     self._flow_close_timer.stop()
                     self.setCursor(Qt.PointingHandCursor)
                     return True
                 else:
-                    self._hovered_create_confirm_btn = False
+                    self._hovered_create_next_btn = False
 
-            # Проверка списка игроков
-            if self._create_step == "players":
-                self._hovered_player_item = None
-                for idx, p in enumerate(self._quest_players_cache):
-                    y_p = 232.0 + idx * 36.0
-                    r_p = QRectF(436.0, y_p - 14.0, 160.0, 28.0)
-                    if r_p.contains(pt):
-                        self._hovered_player_item = p
+                # Кнопка '✔' для беседы
+                if self._create_step == "players" and self._create_flow_kind == FlowKind.CONVERSATION:
+                    c_conf = QPointF(410.0, self.flow_title_input.y() + 48.0)
+                    if math.hypot(pt.x() - c_conf.x(), pt.y() - c_conf.y()) <= 15.0:
+                        self._hovered_create_confirm_btn = True
                         self._flow_close_timer.stop()
                         self.setCursor(Qt.PointingHandCursor)
                         return True
+                    else:
+                        self._hovered_create_confirm_btn = False
 
-        # 5. Если курсор вне активных зон — скрываем серп
-        dx = pt.x() - self.spiral_center.x()
-        dy = pt.y() - self.spiral_center.y()
+                # Список игроков
+                if self._create_step == "players":
+                    self._hovered_player_item = None
+                    y_base_p = self.flow_title_input.y() + 48.0
+                    for idx, p in enumerate(self._quest_players_cache):
+                        y_p = y_base_p + 30.0 + idx * 36.0
+                        r_p = QRectF(410.0 + 30.0, y_p - 14.0, 160.0, 28.0)
+                        if r_p.contains(pt):
+                            self._hovered_player_item = p
+                            self._flow_close_timer.stop()
+                            self.setCursor(Qt.PointingHandCursor)
+                            return True
+
+        self._hovered_flow_btn = None
+
+        # 6. Проверка активной зоны
+        dx = pt.x() - quest_cx
+        dy = pt.y() - quest_cy
         ang_deg = math.degrees(math.atan2(dy, dx))
-        is_over_crescent = (38.0 <= dist_quest <= 56.0) and (-65.0 <= ang_deg <= 135.0)
+        is_over_crescent = (38.0 <= dist_quest <= 56.0) and (-55.0 <= ang_deg <= 125.0)
 
         in_active_zone = False
         if dist_quest <= (self.spiral_radius + 4.0) or is_over_crescent:
             in_active_zone = True
-        elif d_dia <= 16.0 or d_conv <= 16.0 or d_seg <= 18.0:
+        elif d_view <= 18.0 or d_create <= 18.0:
             in_active_zone = True
-        elif self._sel_flow_kind is not None:
-            # Зона раскрытого списка потоков
-            stem_x = 392.0
+        elif self._flow_view_active:
+            # Зона обратного серпа просмотра и раскрытых списков
+            stem_x = 440.0
             flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
-            y_max_flows = 89.2 + 48.0 + max(1, len(flows)) * 36.0 + 20.0
-            if (stem_x - 30.0) <= pt.x() <= (stem_x + 240.0) and 35.0 <= pt.y() <= y_max_flows:
+            y_max_flows = 90.0 + 40.0 + max(1, len(flows)) * 36.0 + 30.0
+            if (340.0 <= pt.x() <= (stem_x + 250.0)) and (30.0 <= pt.y() <= y_max_flows):
                 in_active_zone = True
-        elif self._create_step in ("title", "players"):
-            # Зона полей ввода и подтверждения создания потока
-            if 150.0 <= pt.x() <= 620.0 and 110.0 <= pt.y() <= 460.0:
+        elif self._flow_create_active:
+            # Зона обратного серпа сотворения и полей ввода
+            if (260.0 <= pt.x() <= 620.0) and (110.0 <= pt.y() <= 480.0):
                 in_active_zone = True
 
         if not in_active_zone and self._flow_menu_mode != "none":
-            # При уходе курсора с аватара и серпа — сразу скрываем, как просил Сиг!
-            if self._create_step == "idle" and self._sel_flow_kind is None:
+            # Меню исчезает только если ни одна ветвь не раскрыта кликом
+            if not self._flow_view_active and not self._flow_create_active:
                 self._flow_menu_mode = "none"
+                self._hovered_flow_btn = None
                 self._hovered_flow_kind_disc = None
                 self._hovered_create_segment = None
                 self._spiral_hovered = False
                 self.update()
-            else:
-                if not self._flow_close_timer.isActive():
-                    self._flow_close_timer.start(350)
 
         return False
 
     def _handle_flow_mouse_press(self, pt: QPointF) -> bool:
         """Обработка кликов по органам выбора и создания потоков."""
-        if self._flow_menu_mode in ("both", "select"):
-            if self._hovered_flow_kind_disc:
-                self._sel_flow_kind = self._hovered_flow_kind_disc
+        if self._flow_menu_mode == "none":
+            return False
+
+        # 1. Клик по главной круглой кнопке справа (Просмотр потоков)
+        if self._hovered_flow_btn == "view_main":
+            if self._flow_view_active:
+                # Отмена / закрытие ветви просмотра
+                self._flow_view_active = False
+                self._sel_flow_kind = None
+                self._flow_menu_mode = "both"
+            else:
+                self._flow_view_active = True
+                self._flow_create_active = False
+                self._create_step = "idle"
+                self._create_flow_kind = None
+                self.flow_title_input.setVisible(False)
                 self._flow_menu_mode = "select"
+                self.refresh_flows_and_players()
+            self.update()
+            return True
+
+        # 2. Клик по главной 6-конечной звезде снизу (Создание потока)
+        if self._hovered_flow_btn == "create_main":
+            if self._flow_create_active:
+                # Отмена / закрытие ветви сотворения
+                self._flow_create_active = False
+                self._create_step = "idle"
+                self._create_flow_kind = None
+                self.flow_title_input.setVisible(False)
+                self._flow_menu_mode = "both"
+            else:
+                self._flow_create_active = True
+                self._flow_view_active = False
+                self._sel_flow_kind = None
+                self._create_step = "idle"
+                self._create_flow_kind = None
+                self.flow_title_input.setVisible(False)
+                self._flow_menu_mode = "create"
+                self.refresh_flows_and_players()
+            self.update()
+            return True
+
+        # 3. Интерактив ветви просмотра потоков
+        if self._flow_view_active:
+            # Клик по кружку Диалог на обратном серпе
+            if self._hovered_flow_btn == "sub_view_dia":
+                if self._sel_flow_kind == FlowKind.DIALOGUE:
+                    self._sel_flow_kind = None  # отмена выбора
+                else:
+                    self._sel_flow_kind = FlowKind.DIALOGUE
+                self.update()
                 return True
 
+            # Клик по кружку Беседа на обратном серпе
+            if self._hovered_flow_btn == "sub_view_conv":
+                if self._sel_flow_kind == FlowKind.CONVERSATION:
+                    self._sel_flow_kind = None  # отмена выбора
+                else:
+                    self._sel_flow_kind = FlowKind.CONVERSATION
+                self.update()
+                return True
+
+            # Клик по карточке потока в списке
             if self._hovered_flow_item:
                 flow_id = self._hovered_flow_item.id
-                self._flow_menu_mode = "none"
+                self._on_flow_menu_close_timeout()
                 self.flow_selected.emit(flow_id)
                 return True
 
-        if self._flow_menu_mode in ("both", "create"):
-            if self._hovered_create_segment:
-                self._create_flow_kind = self._hovered_create_segment
-                self._create_step = "title"
-                self._flow_menu_mode = "create"
-                kind_ru = "диалога" if self._create_flow_kind == FlowKind.DIALOGUE else "беседы"
-                self.flow_title_input.clear()
-                self.flow_title_input.setPlaceholderText(f"Имя {kind_ru}...")
-                self.flow_title_input.setGeometry(int(264.0 - 95.0), 170, 190, 28)
-                self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
-                self.flow_next_btn.show()
-                self.flow_title_input.setVisible(True)
-                self.flow_title_input.setFocus()
-                return True
-
+        # 4. Интерактив ветви сотворения потока
+        if self._flow_create_active:
+            # Клик по кнопке '>' перехода к игрокам
             if self._hovered_create_next_btn:
                 self._proceed_to_players()
                 return True
 
+            # Клик по игроку в списке
             if self._hovered_player_item:
                 if self._create_flow_kind == FlowKind.DIALOGUE:
-                    # Выбор одного игрока сразу завершает создание диалога
                     title = self.flow_title_input.text().strip() or f"Диалог с {self._hovered_player_item.username}"
                     flow = self.node.create_quest_flow(
                         self.active_quest_id,
@@ -2145,15 +2227,16 @@ class QuestTreeHUD(QWidget):
                     self.flow_selected.emit(flow.id)
                     return True
                 else:
-                    # Беседа: мультивыбор участников
                     pk = self._hovered_player_item.pubkey
                     if pk in self._selected_participants:
                         if len(self._selected_participants) > 1:
                             self._selected_participants.remove(pk)
                     else:
                         self._selected_participants.add(pk)
+                    self.update()
                     return True
 
+            # Клик по кнопке подтверждения '✔' для беседы
             if self._hovered_create_confirm_btn and self._create_flow_kind == FlowKind.CONVERSATION:
                 title = self.flow_title_input.text().strip() or f"Беседа квеста {self.active_quest_title}"
                 flow = self.node.create_quest_flow(
@@ -2165,6 +2248,53 @@ class QuestTreeHUD(QWidget):
                 self._on_flow_menu_close_timeout()
                 self.flow_selected.emit(flow.id)
                 return True
+
+            # Клик по звезде Диалог на обратном серпе сотворения
+            if self._hovered_flow_btn == "sub_create_dia":
+                if self._create_flow_kind == FlowKind.DIALOGUE and self._create_step in ("title", "players"):
+                    # Отмена процесса создания по повторному клику!
+                    self._create_step = "idle"
+                    self._create_flow_kind = None
+                    self.flow_title_input.setVisible(False)
+                else:
+                    self._create_flow_kind = FlowKind.DIALOGUE
+                    self._create_step = "title"
+                    self.flow_title_input.clear()
+                    self.flow_title_input.setPlaceholderText("Имя диалога...")
+                    self.flow_title_input.setGeometry(356, 168, 190, 28)
+                    self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
+                    self.flow_next_btn.show()
+                    self.flow_title_input.setVisible(True)
+                    self.flow_title_input.setFocus()
+                self.update()
+                return True
+
+            # Клик по звезде Беседа на обратном серпе сотворения
+            if self._hovered_flow_btn == "sub_create_conv":
+                if self._create_flow_kind == FlowKind.CONVERSATION and self._create_step in ("title", "players"):
+                    # Отмена процесса создания по повторному клику!
+                    self._create_step = "idle"
+                    self._create_flow_kind = None
+                    self.flow_title_input.setVisible(False)
+                else:
+                    self._create_flow_kind = FlowKind.CONVERSATION
+                    self._create_step = "title"
+                    self.flow_title_input.clear()
+                    self.flow_title_input.setPlaceholderText("Имя беседы...")
+                    self.flow_title_input.setGeometry(356, 204, 190, 28)
+                    self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
+                    self.flow_next_btn.show()
+                    self.flow_title_input.setVisible(True)
+                    self.flow_title_input.setFocus()
+                self.update()
+                return True
+
+        # 5. Клик вне меню закрывает открытые подменю
+        if self._flow_view_active or self._flow_create_active:
+            self._on_flow_menu_close_timeout()
+            return True
+
+        return False
 
         return False
 
@@ -2179,28 +2309,30 @@ class QuestTreeHUD(QWidget):
     def _draw_flow_selection_and_creation(
         self, painter: QPainter, glow_color: QColor, core_color: QColor
     ) -> None:
-        """Отрисовка единого объемного серпа месяца и органов управления Потоками у выбранного квеста."""
+        """Отрисовка органов управления Потоками квеста по новой архитектуре с обратными серпами."""
         if self._flow_menu_mode == "none":
             return
 
         night = self.is_night()
-        quest_center = self.spiral_center  # QPointF(264.0, 72.0)
+        quest_cx = self.spiral_center.x()
+        quest_cy = self.spiral_center.y()
+        quest_center = self.spiral_center
         arc_radius = 46.0
 
         is_hovered = (
-            self._hovered_flow_kind_disc is not None
-            or self._sel_flow_kind is not None
-            or self._hovered_create_segment is not None
+            self._hovered_flow_btn is not None
+            or self._flow_view_active
+            or self._flow_create_active
             or self._spiral_hovered
         )
 
-        # 1. Единый 3D серп месяца (объединяет правую и нижнюю дуги в один непрерывный месяц от -58° до +128°)
+        # 1. Главный серп месяца вокруг квеста (-50° до +120°)
         self._draw_volumetric_crescent(
             painter,
             quest_center,
             arc_radius,
-            -58.0,
-            186.0,
+            -50.0,
+            170.0,
             t_out=4.5,
             t_in=4.0,
             glow_color=glow_color,
@@ -2210,97 +2342,271 @@ class QuestTreeHUD(QWidget):
             hovered=is_hovered,
         )
 
-        # Центры кружков на едином серпе:
-        c_dia = QPointF(306.6, 54.8)    # Диалог (-22°)
-        c_conv = QPointF(306.6, 89.2)   # Беседа (+22°)
-        c_seg = QPointF(quest_center.x(), quest_center.y() + arc_radius)  # Создание (+90°)
+        # Центры главных кнопок на серпе квеста:
+        c_btn_view = QPointF(quest_cx + arc_radius, quest_cy)        # Круглая справа (0°)
+        c_btn_create = QPointF(quest_cx, quest_cy + arc_radius)      # 6-конечная звезда снизу (+90°)
 
-        # 2. Если выбран тип потока в списке — ветвь со списком вырастает из-под кружка
-        if self._sel_flow_kind in (FlowKind.DIALOGUE, FlowKind.CONVERSATION):
-            start_p = c_dia if self._sel_flow_kind == FlowKind.DIALOGUE else c_conv
-            self._draw_flow_stream_branches(painter, start_p, self._sel_flow_kind, glow_color, core_color, night)
+        # -------------------------------------------------------------
+        # ВЕТВЬ 1: ПРОСМОТР ПОТОКОВ (справа)
+        # -------------------------------------------------------------
+        if self._flow_view_active:
+            rev_view_center = QPointF(384.0, 72.0)
+            rev_view_r = 28.0
+            p_view_belly = QPointF(rev_view_center.x() - rev_view_r, rev_view_center.y())  # (356.0, 72.0)
 
-        # 3. Кружок «Диалог» (-22°)
-        is_dia_hovered = (self._hovered_flow_kind_disc == FlowKind.DIALOGUE or self._sel_flow_kind == FlowKind.DIALOGUE)
-        self._draw_flow_type_circle(painter, c_dia, 13.0, FlowKind.DIALOGUE, is_dia_hovered, glow_color, core_color, night)
+            # Тонкая объемная веточка от c_btn_view к чреву обратного серпа
+            branch_view_pts = [
+                c_btn_view,
+                QPointF((c_btn_view.x() + p_view_belly.x()) * 0.5, 72.0),
+                p_view_belly,
+            ]
+            self._draw_volumetric_branch(painter, branch_view_pts, 2.4, 1.6, night)
 
-        # 4. Кружок «Беседа» (+22°)
-        is_conv_hovered = (self._hovered_flow_kind_disc == FlowKind.CONVERSATION or self._sel_flow_kind == FlowKind.CONVERSATION)
-        self._draw_flow_type_circle(painter, c_conv, 13.0, FlowKind.CONVERSATION, is_conv_hovered, glow_color, core_color, night)
+            # Обратный серп просмотра (чрево на 180°, рожки вправо)
+            self._draw_volumetric_crescent(
+                painter,
+                rev_view_center,
+                rev_view_r,
+                100.0,
+                160.0,
+                t_out=3.6,
+                t_in=3.2,
+                glow_color=glow_color,
+                core_color=core_color,
+                night=night,
+                is_active=True,
+                hovered=True,
+            )
 
-        # 5. Сегментированный кружок создания потока (+90°)
-        self._draw_creation_segmented_circle(painter, c_seg, 16.0, glow_color, core_color, night)
+            # Круглые кнопки на обратном серпе
+            c_sub_dia = QPointF(362.5, 54.0)
+            c_sub_conv = QPointF(362.5, 90.0)
 
-        # 6. Если нажат сегмент — веточка вниз к полю ввода названия
-        if self._create_step in ("title", "players"):
-            self._draw_creation_stem_to_input(painter, c_seg, glow_color, core_color, night)
+            # Если выбран тип потока — ветвь со списком вырастает из-под кружка
+            if self._sel_flow_kind in (FlowKind.DIALOGUE, FlowKind.CONVERSATION):
+                start_p = c_sub_dia if self._sel_flow_kind == FlowKind.DIALOGUE else c_sub_conv
+                self._draw_flow_stream_branches(painter, start_p, self._sel_flow_kind, glow_color, core_color, night)
 
-    def _draw_flow_type_circle(
+            # Кружок «Диалог» на обратном серпе
+            is_sub_dia_act = (self._sel_flow_kind == FlowKind.DIALOGUE)
+            is_sub_dia_hov = (self._hovered_flow_btn == "sub_view_dia")
+            self._draw_circle_control(painter, c_sub_dia, 11.5, "dia", is_sub_dia_act, is_sub_dia_hov, glow_color, core_color, night)
+
+            # Кружок «Беседа» на обратном серпе
+            is_sub_conv_act = (self._sel_flow_kind == FlowKind.CONVERSATION)
+            is_sub_conv_hov = (self._hovered_flow_btn == "sub_view_conv")
+            self._draw_circle_control(painter, c_sub_conv, 11.5, "conv", is_sub_conv_act, is_sub_conv_hov, glow_color, core_color, night)
+
+        # -------------------------------------------------------------
+        # ВЕТВЬ 2: СОТВОРЕНИЕ ПОТОКА (справа-снизу)
+        # -------------------------------------------------------------
+        if self._flow_create_active:
+            rev_create_center = QPointF(340.0, 200.0)
+            rev_create_r = 28.0
+            p_create_belly = QPointF(rev_create_center.x() - rev_create_r, rev_create_center.y())  # (312.0, 200.0)
+
+            # Тонкая объемная веточка, изгибающаяся плавно вправо-вниз
+            branch_create_pts = [
+                c_btn_create,
+                QPointF(c_btn_create.x(), c_btn_create.y() + 40.0),
+                QPointF(p_create_belly.x() - 25.0, p_create_belly.y() - 5.0),
+                p_create_belly,
+            ]
+            self._draw_volumetric_branch(painter, branch_create_pts, 2.4, 1.6, night)
+
+            # Обратный серп сотворения
+            self._draw_volumetric_crescent(
+                painter,
+                rev_create_center,
+                rev_create_r,
+                100.0,
+                160.0,
+                t_out=3.6,
+                t_in=3.2,
+                glow_color=glow_color,
+                core_color=core_color,
+                night=night,
+                is_active=True,
+                hovered=True,
+            )
+
+            # Две 6-конечные звёздочки на обратном серпе сотворения
+            c_star_dia = QPointF(318.5, 182.0)
+            c_star_conv = QPointF(318.5, 218.0)
+
+            # Если идёт сотворение — веточка к полю ввода
+            if self._create_step in ("title", "players") and self._create_flow_kind:
+                active_star = c_star_dia if self._create_flow_kind == FlowKind.DIALOGUE else c_star_conv
+                stem_pts = [
+                    active_star,
+                    QPointF(active_star.x() + 20.0, active_star.y()),
+                    QPointF(356.0, active_star.y()),
+                ]
+                self._draw_volumetric_branch(painter, stem_pts, 2.0, 1.4, night)
+
+                if self._create_step == "players":
+                    btn_right_edge = QPointF(self.flow_title_input.x() + self.flow_title_input.width(), self.flow_title_input.y() + 14.0)
+                    self._draw_creation_players_list(painter, btn_right_edge, glow_color, core_color, night)
+
+            is_s_dia_act = (self._create_flow_kind == FlowKind.DIALOGUE and self._create_step in ("title", "players"))
+            is_s_dia_hov = (self._hovered_flow_btn == "sub_create_dia")
+            self._draw_star_control(painter, c_star_dia, 12.5, "dia", is_s_dia_act, is_s_dia_hov, glow_color, core_color, night)
+
+            is_s_conv_act = (self._create_flow_kind == FlowKind.CONVERSATION and self._create_step in ("title", "players"))
+            is_s_conv_hov = (self._hovered_flow_btn == "sub_create_conv")
+            self._draw_star_control(painter, c_star_conv, 12.5, "conv", is_s_conv_act, is_s_conv_hov, glow_color, core_color, night)
+
+        # -------------------------------------------------------------
+        # ГЛАВНЫЕ ОРГАНЫ НА СЕРПЕ КВЕСТА:
+        # 1. Правая круглая кнопка с иконкой потока
+        # 2. Нижняя 6-конечная звезда с иконкой потока
+        # -------------------------------------------------------------
+        is_view_hov = (self._hovered_flow_btn == "view_main")
+        self._draw_circle_control(painter, c_btn_view, 13.0, "spiral", self._flow_view_active, is_view_hov, glow_color, core_color, night)
+
+        is_create_hov = (self._hovered_flow_btn == "create_main")
+        self._draw_star_control(painter, c_btn_create, 14.0, "spiral", self._flow_create_active, is_create_hov, glow_color, core_color, night)
+
+    def _draw_circle_control(
         self,
         painter: QPainter,
         center: QPointF,
         radius: float,
-        kind: FlowKind,
+        glyph: str,
         is_active: bool,
+        hovered: bool,
         glow_color: QColor,
         core_color: QColor,
         night: bool,
     ) -> None:
-        """Отрисовка кружка типа потока с процедурным сакральным глифом."""
-        # Ореол
-        if is_active:
-            grad = QRadialGradient(center, radius + 8.0)
-            grad.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 190))
-            grad.setColorAt(0.6, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 80))
+        """Отрисовка круглой кнопки с сакральным глифом и физическим ореолом."""
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        # 1. Ореол свечения
+        if is_active or hovered:
+            r_glow = radius + (8.0 if is_active else 5.5)
+            grad = QRadialGradient(center, r_glow)
+            alpha_peak = 200 if is_active else 140
+            grad.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), alpha_peak))
+            grad.setColorAt(0.65, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(alpha_peak * 0.45)))
             grad.setColorAt(1.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 0))
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(grad))
-            painter.drawEllipse(center, radius + 8.0, radius + 8.0)
+            painter.drawEllipse(center, r_glow, r_glow)
 
-        # Тело кружка
-        bg_color = QColor(24, 32, 54, 230) if night else QColor(42, 36, 24, 220)
+        # 2. Непрозрачное темное стекло
+        bg = QColor(14, 20, 36, 245) if night else QColor(22, 28, 44, 240)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(bg_color)
+        painter.setBrush(bg)
         painter.drawEllipse(center, radius, radius)
 
-        # Ободок
-        border_alpha = 240 if is_active else 150
-        border_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), border_alpha), 1.5 if is_active else 1.1)
+        # 3. Глиф
+        self._draw_control_glyph(painter, center, radius, glyph, is_active, hovered, glow_color, core_color, night)
+
+        # 4. Золотой ободок
+        b_col = core_color if is_active else (glow_color if hovered else QColor(core_color.red(), core_color.green(), core_color.blue(), 160))
+        border_pen = QPen(b_col, 1.5 if is_active else (1.2 if hovered else 1.0))
         painter.setPen(border_pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(center, radius, radius)
+        painter.restore()
 
-        # Процедурная иконка
+    def _draw_star_control(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        radius: float,
+        glyph: str,
+        is_active: bool,
+        hovered: bool,
+        glow_color: QColor,
+        core_color: QColor,
+        night: bool,
+    ) -> None:
+        """Отрисовка 6-конечной звезды с сакральным глифом и физическим ореолом."""
         painter.save()
-        painter.translate(center.x(), center.y())
-        icon_pen = QPen(core_color if is_active else glow_color, 1.4, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(icon_pen)
-        painter.setBrush(Qt.NoBrush)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-        if kind == FlowKind.DIALOGUE:
-            # Две встречные сакральные дуги (симбиоз диалога)
-            painter.drawArc(QRectF(-6.5, -6.5, 9.0, 13.0), int(-70 * 16), int(140 * 16))
-            painter.drawArc(QRectF(-2.5, -6.5, 9.0, 13.0), int(110 * 16), int(140 * 16))
+        # 1. Ореол свечения
+        if is_active or hovered:
+            r_glow = radius + (8.5 if is_active else 6.0)
+            grad = QRadialGradient(center, r_glow)
+            alpha_peak = 210 if is_active else 150
+            grad.setColorAt(0.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), alpha_peak))
+            grad.setColorAt(0.65, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), int(alpha_peak * 0.45)))
+            grad.setColorAt(1.0, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 0))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(grad))
+            painter.drawEllipse(center, r_glow, r_glow)
+
+        # 2. Тело звезды
+        path = create_hexagram_path(center, radius)
+        bg = QColor(14, 20, 36, 245) if night else QColor(22, 28, 44, 240)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawPath(path)
+
+        # 3. Глиф
+        self._draw_control_glyph(painter, center, radius * 0.72, glyph, is_active, hovered, glow_color, core_color, night)
+
+        # 4. Золотой ободок звезды
+        b_col = core_color if is_active else (glow_color if hovered else QColor(core_color.red(), core_color.green(), core_color.blue(), 160))
+        border_pen = QPen(b_col, 1.5 if is_active else (1.2 if hovered else 1.0))
+        painter.setPen(border_pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(path)
+        painter.restore()
+
+    def _draw_control_glyph(
+        self,
+        painter: QPainter,
+        center: QPointF,
+        radius: float,
+        glyph: str,
+        is_active: bool,
+        hovered: bool,
+        glow_color: QColor,
+        core_color: QColor,
+        night: bool,
+    ) -> None:
+        """Отрисовка глифа (двойная спираль, диалог или беседа)."""
+        if glyph == "spiral":
+            pix = self.get_double_spiral_pixmap(size=int(radius * 1.85))
+            if pix and not pix.isNull():
+                d = (radius - 1.0) * 1.85
+                target = QRectF(center.x() - d / 2.0, center.y() - d / 2.0, d, d)
+                painter.drawPixmap(target.toRect(), pix)
+        elif glyph == "dia":
+            painter.save()
+            painter.translate(center.x(), center.y())
+            pen = QPen(core_color if is_active else glow_color, 1.3, Qt.SolidLine, Qt.RoundCap)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawArc(QRectF(-4.5, -4.5, 6.5, 9.0), int(-70 * 16), int(140 * 16))
+            painter.drawArc(QRectF(-2.0, -4.5, 6.5, 9.0), int(110 * 16), int(140 * 16))
             painter.setBrush(core_color)
-            painter.drawEllipse(QPointF(0, 0), 1.4, 1.4)
-        else:
-            # Триада созвездия (беседа)
-            p1 = QPointF(0.0, -4.8)
-            p2 = QPointF(-4.5, 3.5)
-            p3 = QPointF(4.5, 3.5)
-            line_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 140), 0.9)
+            painter.drawEllipse(QPointF(0, 0), 1.1, 1.1)
+            painter.restore()
+        elif glyph == "conv":
+            painter.save()
+            painter.translate(center.x(), center.y())
+            p1 = QPointF(0.0, -3.8)
+            p2 = QPointF(-3.5, 2.8)
+            p3 = QPointF(3.5, 2.8)
+            line_pen = QPen(QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 160), 0.8)
             painter.setPen(line_pen)
             painter.drawLine(p1, p2)
             painter.drawLine(p2, p3)
             painter.drawLine(p3, p1)
-
             painter.setPen(Qt.NoPen)
             painter.setBrush(core_color)
-            painter.drawEllipse(p1, 2.0, 2.0)
-            painter.drawEllipse(p2, 2.0, 2.0)
-            painter.drawEllipse(p3, 2.0, 2.0)
-
-        painter.restore()
+            painter.drawEllipse(p1, 1.5, 1.5)
+            painter.drawEllipse(p2, 1.5, 1.5)
+            painter.drawEllipse(p3, 1.5, 1.5)
+            painter.restore()
 
     def _draw_flow_stream_branches(
         self,
@@ -2314,18 +2620,18 @@ class QuestTreeHUD(QWidget):
         """Отрисовка органической ветви вправо и вниз со списком существующих потоков."""
         flows = [f for f in self._quest_flows_cache if f.kind == kind]
         count = max(1, len(flows))
-        stem_x = 392.0
+        stem_x = 440.0
         y_top = start_pt.y()
-        y_last_item = (y_top + 48.0) + (count - 1) * 36.0
-        y_bottom = y_last_item + 42.0
+        y_last_item = (y_top + 40.0) + (count - 1) * 36.0
+        y_bottom = y_last_item + 36.0
 
-        # 1. Главная ветвь: сначала далеко ВПРАВО, затем ПЛАВНО ВНИЗ без острых углов
+        # 1. Главная ветвь: сначала вправо от кнопки, затем плавно вниз
         pts: List[QPointF] = []
-        bend_steps = 24
+        bend_steps = 20
         p0 = start_pt
-        c1 = QPointF(start_pt.x() + 54.0, y_top)      # строго горизонтальный отход вправо
+        c1 = QPointF(start_pt.x() + 45.0, y_top)      # строго горизонтальный отход вправо
         c2 = QPointF(stem_x, y_top + 10.0)            # плавное закругление
-        p3 = QPointF(stem_x, y_top + 42.0)            # строго вертикальный вход вниз
+        p3 = QPointF(stem_x, y_top + 36.0)            # строго вертикальный вход вниз
 
         for i in range(bend_steps + 1):
             t = i / bend_steps
@@ -2337,20 +2643,19 @@ class QuestTreeHUD(QWidget):
         v_steps = max(6, count * 6)
         for i in range(1, v_steps + 1):
             t = i / v_steps
-            y = (y_top + 42.0) + (y_last_item - (y_top + 42.0)) * t
+            y = (y_top + 36.0) + (y_last_item - (y_top + 36.0)) * t
             pts.append(QPointF(stem_x, y))
 
-        # 2. Плавное органическое утоньшение кончика ветви (без обрыва!)
-        tail_steps = 14
+        # 2. Плавное органическое утоньшение кончика ветви
+        tail_steps = 12
         for i in range(1, tail_steps + 1):
             u = i / tail_steps
             y = y_last_item + (y_bottom - y_last_item) * u
-            # легкий живой природный изгиб
-            x = stem_x + 2.5 * math.sin(u * math.pi)
+            x = stem_x + 2.0 * math.sin(u * math.pi)
             pts.append(QPointF(x, y))
 
-        # Отрисовка объемной утончающейся ветви (от 3.4px до тончайших 0.5px на кончике!)
-        self._draw_volumetric_branch(painter, pts, 3.4, 0.5, night)
+        # Отрисовка объемной утончающейся ветви
+        self._draw_volumetric_branch(painter, pts, 3.0, 0.5, night)
 
         # 3. Живые гибкие веточки к каждому потоку
         font = QFont("Georgia", 10)
@@ -2358,13 +2663,13 @@ class QuestTreeHUD(QWidget):
         fm = QFontMetrics(font)
 
         for idx, flow in enumerate(flows):
-            y_item = (y_top + 48.0) + idx * 36.0
+            y_item = (y_top + 40.0) + idx * 36.0
             p_twig_start = QPointF(stem_x, y_item)
-            p_twig_end = QPointF(stem_x + 30.0, y_item)
+            p_twig_end = QPointF(stem_x + 28.0, y_item)
 
             is_hov = (self._hovered_flow_item == flow)
 
-            # Формируем органическую изогнутую веточку (кубический сплайн вместо прямой!)
+            # Формируем органическую изогнутую веточку
             twig_pts: List[QPointF] = []
             tw_steps = 10
             tw_c1 = QPointF(stem_x + 9.0, y_item + 1.8)
@@ -2376,8 +2681,8 @@ class QuestTreeHUD(QWidget):
                 ty = (1 - tt)**3 * p_twig_start.y() + 3 * (1 - tt)**2 * tt * tw_c1.y() + 3 * (1 - tt) * tt**2 * tw_c2.y() + tt**3 * p_twig_end.y()
                 twig_pts.append(QPointF(tx, ty))
 
-            # Отрисовываем веточку утончающейся лентой (от 2.2px к 0.8px)
-            self._draw_volumetric_branch(painter, twig_pts, 2.2, 0.8, night)
+            # Отрисовываем веточку
+            self._draw_volumetric_branch(painter, twig_pts, 2.0, 0.8, night)
 
             # Концевая почка веточки
             painter.setPen(Qt.NoPen)
@@ -2386,7 +2691,7 @@ class QuestTreeHUD(QWidget):
 
             # Табличка названия потока
             t_w = fm.horizontalAdvance(flow.title)
-            pill_rect = QRectF(stem_x + 34.0, y_item - 12.0, max(84.0, t_w + 18.0), 24.0)
+            pill_rect = QRectF(stem_x + 32.0, y_item - 12.0, max(84.0, t_w + 18.0), 24.0)
 
             if is_hov:
                 painter.setBrush(QColor(234, 179, 8, 45))
@@ -2403,98 +2708,6 @@ class QuestTreeHUD(QWidget):
             painter.setPen(text_color)
             painter.drawText(pill_rect, Qt.AlignCenter, flow.title)
 
-    def _draw_creation_segmented_circle(
-        self,
-        painter: QPainter,
-        center: QPointF,
-        radius: float,
-        glow_color: QColor,
-        core_color: QColor,
-        night: bool,
-    ) -> None:
-        """Отрисовка кружка, разделенного на 2 сегмента: Диалог (слева) и Беседа (справа)."""
-        left_hovered = (self._hovered_create_segment == FlowKind.DIALOGUE or self._create_flow_kind == FlowKind.DIALOGUE)
-        right_hovered = (self._hovered_create_segment == FlowKind.CONVERSATION or self._create_flow_kind == FlowKind.CONVERSATION)
-
-        # 0. Сплошная непрозрачная подложка диска (чтобы фон и дуги сзади никогда не просвечивали)
-        painter.save()
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(16, 22, 38, 255))
-        painter.drawEllipse(center, radius, radius)
-        painter.restore()
-
-        # 1. Левый сегмент (Диалог)
-        painter.save()
-        clip_left = QPainterPath()
-        clip_left.addRect(QRectF(center.x() - radius - 4, center.y() - radius - 4, radius + 4, 2 * radius + 8))
-        painter.setClipPath(clip_left)
-
-        brush_l = QColor(212, 165, 36, 230) if left_hovered else QColor(24, 32, 54, 240)
-        painter.setBrush(brush_l)
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(center, radius, radius)
-
-        # Иконка диалога слева
-        p_dia_icon = QPointF(center.x() - radius * 0.45, center.y())
-        pen_dia = QPen(QColor(14, 20, 34, 240) if left_hovered else glow_color, 1.4, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(pen_dia)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawArc(QRectF(p_dia_icon.x() - 4.5, p_dia_icon.y() - 5.5, 6.0, 11.0), int(-70 * 16), int(140 * 16))
-        painter.drawArc(QRectF(p_dia_icon.x() - 1.5, p_dia_icon.y() - 5.5, 6.0, 11.0), int(110 * 16), int(140 * 16))
-        painter.restore()
-
-        # 2. Правый сегмент (Беседа)
-        painter.save()
-        clip_right = QPainterPath()
-        clip_right.addRect(QRectF(center.x(), center.y() - radius - 4, radius + 4, 2 * radius + 8))
-        painter.setClipPath(clip_right)
-
-        brush_r = QColor(212, 165, 36, 230) if right_hovered else QColor(24, 32, 54, 240)
-        painter.setBrush(brush_r)
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(center, radius, radius)
-
-        # Иконка беседы справа
-        p_c_r = QPointF(center.x() + radius * 0.45, center.y())
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(14, 20, 34, 240) if right_hovered else glow_color)
-        painter.drawEllipse(QPointF(p_c_r.x(), p_c_r.y() - 3.5), 1.5, 1.5)
-        painter.drawEllipse(QPointF(p_c_r.x() - 3.0, p_c_r.y() + 2.5), 1.5, 1.5)
-        painter.drawEllipse(QPointF(p_c_r.x() + 3.0, p_c_r.y() + 2.5), 1.5, 1.5)
-        painter.restore()
-
-        # 3. Разделительная вертикальная линия по центру
-        sep_pen = QPen(QColor(core_color.red(), core_color.green(), core_color.blue(), 200), 1.2)
-        painter.setPen(sep_pen)
-        painter.drawLine(QPointF(center.x(), center.y() - radius), QPointF(center.x(), center.y() + radius))
-
-        # Ободок кружка
-        rim_pen = QPen(core_color, 1.4)
-        painter.setPen(rim_pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(center, radius, radius)
-
-    def _draw_creation_stem_to_input(
-        self,
-        painter: QPainter,
-        c_seg: QPointF,
-        glow_color: QColor,
-        core_color: QColor,
-        night: bool,
-    ) -> None:
-        """Отрисовка веточки вниз к полю ввода и разветвления к игрокам."""
-        pts = [
-            QPointF(c_seg.x(), c_seg.y() + 16.0),
-            QPointF(c_seg.x(), c_seg.y() + 32.0),
-            QPointF(c_seg.x(), 168.0),
-        ]
-        self._draw_volumetric_branch(painter, pts, 2.6, 1.4, night)
-
-        # Если перешли к выбору игроков — рисуем ветвь вправо и вниз к списку участников
-        if self._create_step == "players":
-            btn_right_edge = QPointF(self.flow_title_input.x() + self.flow_title_input.width(), 184.0)
-            self._draw_creation_players_list(painter, btn_right_edge, glow_color, core_color, night)
-
     def _draw_creation_players_list(
         self,
         painter: QPainter,
@@ -2504,10 +2717,11 @@ class QuestTreeHUD(QWidget):
         night: bool,
     ) -> None:
         """Отрисовка списка игроков квеста с аватарками и кнопкой подтверждения для беседы."""
-        corner_bend = QPointF(420.0, 202.0)
+        y_bend = self.flow_title_input.y() + 48.0
+        corner_bend = QPointF(410.0, y_bend)
         players = self._quest_players_cache
         count = max(1, len(players))
-        y_last_p = 232.0 + (count - 1) * 36.0
+        y_last_p = y_bend + 30.0 + (count - 1) * 36.0
         y_bottom = y_last_p + 36.0
 
         pts_curve: List[QPointF] = []
@@ -2533,7 +2747,7 @@ class QuestTreeHUD(QWidget):
             x = corner_bend.x() + 2.0 * math.sin(u * math.pi)
             pts_curve.append(QPointF(x, y))
 
-        self._draw_volumetric_branch(painter, pts_curve, 2.6, 0.5, night)
+        self._draw_volumetric_branch(painter, pts_curve, 2.4, 0.5, night)
 
         # Если создаётся Беседа — в месте изгиба рисуем окружность с символом ✔
         if self._create_flow_kind == FlowKind.CONVERSATION:
@@ -2561,12 +2775,51 @@ class QuestTreeHUD(QWidget):
         painter.setFont(font)
 
         for idx, player in enumerate(players):
-            y_p = 232.0 + idx * 36.0
+            y_p = y_bend + 30.0 + idx * 36.0
             p_start = QPointF(corner_bend.x(), y_p)
             p_end = QPointF(corner_bend.x() + 16.0, y_p)
 
             is_sel = (player.pubkey in self._selected_participants)
             is_hov = (self._hovered_player_item == player)
+            active = is_sel or (self._create_flow_kind == FlowKind.DIALOGUE and is_hov)
+
+            # Изогнутая веточка к игроку
+            tw_pts = [
+                p_start,
+                QPointF(corner_bend.x() + 5.0, y_p + 1.2),
+                QPointF(corner_bend.x() + 11.0, y_p - 1.2),
+                p_end,
+            ]
+            self._draw_volumetric_branch(painter, tw_pts, 1.8, 0.8, night)
+
+            # Аватарка игрока (24px)
+            c_avatar = QPointF(corner_bend.x() + 28.0, y_p)
+            r_av = 10.0
+
+            pix = self._get_player_avatar_pixmap(player)
+            if pix and not pix.isNull():
+                clip_path = QPainterPath()
+                clip_path.addEllipse(c_avatar, r_av, r_av)
+                painter.save()
+                painter.setClipPath(clip_path)
+                target_rect = QRectF(c_avatar.x() - r_av, c_avatar.y() - r_av, 2 * r_av, 2 * r_av)
+                painter.drawPixmap(target_rect.toRect(), pix)
+                painter.restore()
+
+            av_pen = QPen(core_color if active else QColor(255, 255, 255, 120), 1.5 if active else 1.0)
+            painter.setPen(av_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(c_avatar, r_av, r_av)
+
+            # Имя игрока (туманнее при неактивном состоянии, ярче при выборе)
+            name_rect = QRectF(corner_bend.x() + 44.0, y_p - 11.0, 130.0, 22.0)
+            if active:
+                text_color = QColor(254, 240, 138, 255)
+            else:
+                text_color = QColor(226, 232, 240, 140)
+
+            painter.setPen(text_color)
+            painter.drawText(name_rect, Qt.AlignLeft | Qt.AlignVCenter, player.username)
             active = is_sel or (self._create_flow_kind == FlowKind.DIALOGUE and is_hov)
 
             # Изогнутая веточка к игроку

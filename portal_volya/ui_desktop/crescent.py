@@ -389,3 +389,21 @@ def draw_volumetric_branch(
         painter.drawEllipse(pts[0], w_start * 0.45, w_start * 0.45)
 
     painter.restore()
+
+
+def create_hexagram_path(center: QPointF, r_outer: float) -> QPainterPath:
+    """Создание контура сакральной 6-конечной звезды (гексаграммы гармонии)."""
+    r_inner = r_outer / math.sqrt(3.0)  # ~0.577 * r_outer
+    path = QPainterPath()
+    pts = []
+    for i in range(12):
+        ang_rad = math.radians(-90.0 + i * 30.0)
+        r = r_outer if (i % 2 == 0) else r_inner
+        pts.append(QPointF(center.x() + r * math.cos(ang_rad), center.y() + r * math.sin(ang_rad)))
+
+    path.moveTo(pts[0])
+    for p in pts[1:]:
+        path.lineTo(p)
+    path.closeSubpath()
+    return path
+

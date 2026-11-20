@@ -36,51 +36,71 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         hud.has_selected_quest = True
         hud.set_active_quest("quest-volya-root")
 
-        # 1. Наведение на выбранный квест -> раскрываются ОБЕ дуги
+        # 1. Наведение на выбранный квест -> раскрывается главный серп квеста с 2 кнопками
         pt_quest = QPointF(264.0, 72.0)
         move_ev1 = QMouseEvent(QMouseEvent.Type.MouseMove, pt_quest, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
         hud.mouseMoveEvent(move_ev1)
         assert hud._flow_menu_mode == "both"
 
-        # 2. Движение вправо к правой дуге (Выбор потока) -> нижняя дуга исчезает
-        pt_right = QPointF(306.6, 54.8) # диск Диалога
-        move_ev2 = QMouseEvent(QMouseEvent.Type.MouseMove, pt_right, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
-        hud.mouseMoveEvent(move_ev2)
+        # 2. Клик по правой круглой кнопке (Просмотр потоков) -> раскрывается обратный серп просмотра
+        pt_view_btn = QPointF(310.0, 72.0)
+        hud._handle_flow_mouse_move(pt_view_btn)
+        click_view_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_view_btn, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_view_ev)
+        assert hud._flow_view_active is True
         assert hud._flow_menu_mode == "select"
+
+        # 3. Клик по кружку Диалог на обратном серпе просмотра -> раскрывается ветвь диалогов
+        pt_sub_dia = QPointF(362.5, 54.0)
+        hud._handle_flow_mouse_move(pt_sub_dia)
+        click_sub_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_sub_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_sub_dia_ev)
         assert hud._sel_flow_kind == FlowKind.DIALOGUE
 
-        # 3. Клик по потоку в списке (изначально список пуст)
-        flows = hud._quest_flows_cache
-        assert len(flows) == 0
+        # 4. Повторный клик по кружку Диалог -> отмена выбора (ветвь скрывается)
+        hud.mousePressEvent(click_sub_dia_ev)
+        assert hud._sel_flow_kind is None
 
+        # 5. Клик по кружку Беседа на обратном серпе просмотра -> раскрывается ветвь бесед
+        pt_sub_conv = QPointF(362.5, 90.0)
+        hud._handle_flow_mouse_move(pt_sub_conv)
+        click_sub_conv_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_sub_conv, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_sub_conv_ev)
+        assert hud._sel_flow_kind == FlowKind.CONVERSATION
+
+        # 6. Клик по нижней 6-конечной звезде (Сотворение потока) -> раскрывается обратный серп сотворения
+        pt_create_btn = QPointF(264.0, 118.0)
+        hud._handle_flow_mouse_move(pt_create_btn)
+        click_create_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_create_btn, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_create_ev)
+        assert hud._flow_create_active is True
+        assert hud._flow_menu_mode == "create"
+
+        # 7. Клик по 6-конечной звезде Диалог на обратном серпе сотворения -> открывается поле ввода
+        pt_star_dia = QPointF(318.5, 182.0)
+        hud._handle_flow_mouse_move(pt_star_dia)
+        click_star_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_star_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        hud.mousePressEvent(click_star_dia_ev)
+        assert hud._create_step == "title"
+        assert hud._create_flow_kind == FlowKind.DIALOGUE
+        assert hud.flow_title_input.isVisible()
+
+        # 8. Проверка отмены сотворения: повторный клик по звезде Диалог отменяет сотворение!
+        hud.mousePressEvent(click_star_dia_ev)
+        assert hud._create_step == "idle"
+        assert hud.flow_title_input.isVisible() is False
+
+        # Заново начинаем сотворение диалога
+        hud.mousePressEvent(click_star_dia_ev)
+        assert hud._create_step == "title"
+        assert hud.flow_title_input.isVisible() is True
+
+        # 9. Ввод названия и клик по '>' перехода к игрокам
         selected_flows = []
         hud.flow_selected.connect(lambda fid: selected_flows.append(fid))
 
-        # Выбираем Беседу на правой дуге
-        pt_conv = QPointF(306.6, 89.2)
-        move_ev3 = QMouseEvent(QMouseEvent.Type.MouseMove, pt_conv, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
-        hud.mouseMoveEvent(move_ev3)
-        assert hud._sel_flow_kind == FlowKind.CONVERSATION
-
-        # 4. Наведение вниз к дуге создания
-        pt_bottom = QPointF(264.0, 118.0)
-        hud._flow_menu_mode = "both"
-        move_ev4 = QMouseEvent(QMouseEvent.Type.MouseMove, pt_bottom, Qt.NoButton, Qt.NoButton, Qt.NoModifier)
-        hud.mouseMoveEvent(move_ev4)
-        assert hud._flow_menu_mode == "create"
-        assert hud._hovered_create_segment is not None
-
-        # Клик по сегменту «Диалог» (слева от центра)
-        pt_click_dia = QPointF(256.0, 118.0)
-        hud._handle_flow_mouse_move(pt_click_dia)
-        click_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_click_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
-        hud.mousePressEvent(click_dia_ev)
-        assert hud._create_step == "title"
-        assert hud.flow_title_input.isVisible()
-
-        # Ввод названия и клик по '>'
         hud.flow_title_input.setText("Диалог с Эйрой о гармонии")
-        pt_next = QPointF(376.0, 184.0)
+        pt_next = QPointF(hud.flow_title_input.x() + hud.flow_title_input.width() - 14.0, hud.flow_title_input.y() + 14.0)
         hud._handle_flow_mouse_move(pt_next)
         click_next_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_next, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_next_ev)
@@ -88,8 +108,9 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert len(hud._quest_players_cache) >= 1
         assert hud._quest_players_cache[0].username == "Эйра"
 
-        # Клик по первому игроку (Эйре) -> завершает создание диалога!
-        pt_eira = QPointF(460.0, 232.0)
+        # 10. Клик по первому игроку (Эйре) -> завершает создание диалога!
+        y_eira = hud.flow_title_input.y() + 48.0 + 30.0
+        pt_eira = QPointF(460.0, y_eira)
         hud._handle_flow_mouse_move(pt_eira)
         click_eira_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_eira, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_eira_ev)
