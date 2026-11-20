@@ -1239,20 +1239,8 @@ class QuestTreeHUD(QWidget):
         core_color = QColor(255, 255, 255) if night else QColor(254, 240, 138)
         stem_color = QColor(226, 232, 240, 190) if night else QColor(212, 175, 55, 190)
 
-        # 1. Правая дуга аватарки игрока:
-        # Если квест выбран — видна постоянно (вместе с соединительной нитью).
-        # До выбора квеста — появляется только при наведении на аватарку или дугу, и горит ярко!
-        if (
-            self.has_selected_quest
-            or self._arc_visible
-            or self._avatar_hovered
-            or self._arc_hovered
-            or self._tree_open
-        ):
-            self._draw_avatar_arc(painter, glow_color, core_color)
-
-        # 2. Соединительная нить: Дуга -> Спираль
-        # Если квест выбран — видна постоянно. До выбора — при разворачивании или перелёте
+        # 1. Соединительная нить: Дуга -> Спираль
+        # Рисуется ПЕРВОЙ, чтобы основание нити уходило ПОД серп месяца и ПОД спираль Истока
         if (
             self.has_selected_quest
             or self._unfold_progress > 0.0
@@ -1262,6 +1250,16 @@ class QuestTreeHUD(QWidget):
             or self._pending_selection_node is not None
         ):
             self._draw_bridge_thread(painter, glow_color, core_color)
+
+        # 2. Правая дуга вокруг аватарки игрока (объемный серп месяца ПОВЕРХ начала ветви)
+        if (
+            self.has_selected_quest
+            or self._arc_visible
+            or self._avatar_hovered
+            or self._arc_hovered
+            or self._tree_open
+        ):
+            self._draw_avatar_arc(painter, glow_color, core_color)
 
         # 3. Стебель Древа и Ветви
         if self._unfold_progress > 0.5:
@@ -1546,8 +1544,8 @@ class QuestTreeHUD(QWidget):
         """
         Протягивание живой утончающейся веточки от правой дуги аватарки к левому краю Истока («Воля»).
         """
-        p_start = QPointF(self.avatar_center.x() + self.arc_radius, self.avatar_center.y())
-        p_target = QPointF(self.spiral_center.x() - self.spiral_radius, self.spiral_center.y())
+        p_start = QPointF(self.avatar_center.x() + self.arc_radius - 2.5, self.avatar_center.y())
+        p_target = QPointF(self.spiral_center.x() - self.spiral_radius + 2.5, self.spiral_center.y())
 
         # Если квест уже выбран, или идёт анимация перелёта — веточка распущена полностью
         if self.has_selected_quest or self._gliding_node or self._pending_selection_node:
@@ -2994,7 +2992,24 @@ class QuestTreeHUD(QWidget):
         bud_color = QColor(254, 240, 138, 230) if not night else QColor(226, 232, 240, 220)
         rim_color = QColor(254, 240, 138, 220) if not night else QColor(226, 232, 240, 210)
 
-        # Радиальное свечение вокруг аватарки
+        # 1. Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (выходит ИЗ-ПОД аватарки)
+        p_start = QPointF(c_av.x() + 4.0, c_av.y())
+        p_end = QPointF(c_av.x() + r_av + 22.0, c_av.y() + 2.0)
+        twig_pts = self._sample_cubic_bezier(
+            p_start,
+            QPointF(p_start.x() + 10.0, p_start.y() + 5.0),
+            QPointF(p_start.x() + 18.0, p_start.y() - 3.0),
+            p_end,
+            steps=18,
+        )
+        self._draw_volumetric_branch(painter, twig_pts, 2.2, 0.8, night)
+
+        # Светящаяся почка на конце веточки у текста капли
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bud_color)
+        painter.drawEllipse(p_end, 2.2, 2.2)
+
+        # 2. Радиальное свечение вокруг аватарки (поверх начала веточки)
         painter.setPen(Qt.NoPen)
         grad = QRadialGradient(c_av, r_av + 6.0)
         if not night:
@@ -3050,23 +3065,6 @@ class QuestTreeHUD(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(rim_color, 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
-
-        # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
-        p_start = QPointF(c_av.x() + r_av, c_av.y())
-        p_end = QPointF(p_start.x() + 22.0, p_start.y() + 2.0)
-        twig_pts = self._sample_cubic_bezier(
-            p_start,
-            QPointF(p_start.x() + 7.0, p_start.y() + 5.0),
-            QPointF(p_start.x() + 15.0, p_start.y() - 3.0),
-            p_end,
-            steps=18,
-        )
-        self._draw_volumetric_branch(painter, twig_pts, 2.2, 0.8, night)
-
-        # Светящаяся почка на конце веточки у текста капли
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(bud_color)
-        painter.drawEllipse(p_end, 2.2, 2.2)
 
         # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
         bubble_rect = QRectF(p_end.x() + 4.0, node_pt.y() - 10.0, bubble_width, h_drop)
@@ -3144,7 +3142,24 @@ class QuestTreeHUD(QWidget):
         bud_color = QColor(254, 240, 138, 230) if not night else QColor(226, 232, 240, 220)
         rim_color = QColor(254, 240, 138, 220) if not night else QColor(226, 232, 240, 210)
 
-        # Радиальное свечение вокруг аватарки
+        # 1. Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (выходит ИЗ-ПОД аватарки)
+        p_start = QPointF(c_av.x() - 4.0, c_av.y())
+        p_end = QPointF(c_av.x() - r_av - 22.0, c_av.y() + 2.0)
+        twig_pts = self._sample_cubic_bezier(
+            p_start,
+            QPointF(p_start.x() - 10.0, p_start.y() + 5.0),
+            QPointF(p_start.x() - 18.0, p_start.y() - 3.0),
+            p_end,
+            steps=18,
+        )
+        self._draw_volumetric_branch(painter, twig_pts, 2.2, 0.8, night)
+
+        # Светящаяся почка на конце веточки у текста капли
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bud_color)
+        painter.drawEllipse(p_end, 2.2, 2.2)
+
+        # 2. Радиальное свечение вокруг аватарки (поверх начала веточки)
         painter.setPen(Qt.NoPen)
         grad = QRadialGradient(c_av, r_av + 6.0)
         if not night:
@@ -3203,23 +3218,6 @@ class QuestTreeHUD(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(rim_color, 1.2))
         painter.drawEllipse(c_av, r_av, r_av)
-
-        # Живая изогнутая веточка от аватарки ВНУТРЬ к тексту (с плавным утоньшением)
-        p_start = QPointF(c_av.x() - r_av, c_av.y())
-        p_end = QPointF(p_start.x() - 22.0, p_start.y() + 2.0)
-        twig_pts = self._sample_cubic_bezier(
-            p_start,
-            QPointF(p_start.x() - 7.0, p_start.y() + 5.0),
-            QPointF(p_start.x() - 15.0, p_start.y() - 3.0),
-            p_end,
-            steps=18,
-        )
-        self._draw_volumetric_branch(painter, twig_pts, 2.2, 0.8, night)
-
-        # Светящаяся почка на конце веточки у текста капли
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(bud_color)
-        painter.drawEllipse(p_end, 2.2, 2.2)
 
         # Дыхание капли мысли (менее прозрачный бархатистый фон для чистоты чтения)
         bubble_rect = QRectF(p_end.x() - bubble_width - 4.0, node_pt.y() - 10.0, bubble_width, h_drop)

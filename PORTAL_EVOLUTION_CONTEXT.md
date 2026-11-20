@@ -694,4 +694,8 @@ iver_flow_map.png (1920x1080) с точным направлением тече�
     * Нижняя/теневая сторона уходит в естественную теплую бронзу (днем) или индиго-сланец (ночью).
     * Вдоль обращенного к солнцу гребня струится непрерывная спекулярная жила (`specular spine`), следующая за изгибами кривой.
   * **Глубина и слоистость:** мягкая бархатная тень глубины снизу-справа (смещение $+1.5\text{px}, +2.5\text{px}$) и сакральный ореол свечения.
-* **Верификация:** Все 48 тестов пройдены (`pytest portal_volya/tests`). Visual QA подтверждена на `preview_hud_3d_branches_zoom_day.png`, `preview_hud_3d_branches_zoom_night.png`, `preview_flow_stream_macro_day.png`, `preview_flow_stream_macro_night.png` и `comparison_branch_phong_vs_old.png`.
+  * **Безупречный порядок слоёв (заземление ветвей под серпы и медальоны):**
+    * Ветви, мосты и побеги больше никогда не перекрывают тело серпов месяца или медальоны аватарок.
+    * Отрисовка связующей нити (`_draw_bridge_thread`) в `paintEvent` теперь выполняется строго **до** отрисовки серпа месяца (`_draw_avatar_arc`), а точка начала нити утоплена внутрь тела серпа (`arc_radius - 2.5px`), благодаря чему нить физически произрастает из-под брюшка месяца без наслоения торца или теней.
+    * Аналогично, побеги капель мыслей в Потоке (`twig_pts`) отрисовываются до медальонов аватарок собеседников и автора, органично выходя из-под медальона в ткань беседы.
+* **Верификация:** Все 48 тестов пройдены (`pytest portal_volya/tests`). Visual QA подтверждена на `preview_hud_3d_branches_zoom_day.png`, `preview_hud_3d_branches_zoom_night.png`, `preview_flow_stream_macro_day.png`, `preview_flow_stream_macro_night.png`, `comparison_branch_phong_vs_old.png` и `preview_thread_under_crescent.png`.
