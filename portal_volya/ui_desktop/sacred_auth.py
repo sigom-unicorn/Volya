@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -402,7 +403,7 @@ class SacredPinLockWidget(QWidget):
         self.cy = 100.0
         self.avatar_size = 96.0
         self.avatar_radius = self.avatar_size / 2.0
-        self.arc_radius = self.avatar_radius + 10.0  # 58.0 px
+        self.arc_radius = self.avatar_radius + 4.0  # 52.0 px (ближе к аватарке)
 
         # Текущий режим интерфейса
         self.mode = self.MODE_PIN if identity is not None else self.MODE_NEW
@@ -1180,12 +1181,14 @@ class SacredPinLockWidget(QWidget):
         if self._switch_list_visible:
             is_hover = True
         else:
-            # Зона дуги и вертикального ствола кнопок
-            arc_zone = (abs(mx - self.cx) <= (self.arc_radius + 35)) and (
-                (self.cy + 10) <= my <= (self.cy + self.arc_radius + 50)
-            )
-            btn_spine_zone = (abs(mx - self.cx) <= 100) and (170 <= my <= 315)
-            is_hover = arc_zone or btn_spine_zone
+            # Наведение строго на аватарку (серп появляется только при наведении на аватарку)
+            dist_avatar = math.hypot(mx - self.cx, my - self.cy)
+            avatar_zone = dist_avatar <= (self.avatar_radius + 6.0)
+
+            # Если меню уже раскрыто, поддерживаем наведение при переходе курсора к цепочке кнопок
+            btn_spine_zone = (abs(mx - self.cx) <= 85) and (self.cy <= my <= 325)
+
+            is_hover = avatar_zone or (self._arc_hovered and btn_spine_zone)
 
         if is_hover != self._arc_hovered:
             self._arc_hovered = is_hover
@@ -1220,21 +1223,22 @@ class SacredPinLockWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        # 1. Отрисовка объемного 3D серпа месяца под аватаркой игрока на входе
-        draw_volumetric_crescent(
-            painter=painter,
-            center=QPointF(self.cx, self.cy),
-            r_mid=self.arc_radius,
-            start_deg=22.0,
-            span_deg=136.0,
-            t_out=5.5,
-            t_in=4.5,
-            glow_color=QColor(253, 224, 71),
-            core_color=QColor(254, 240, 138),
-            night=cur_night,
-            is_active=True,
-            hovered=self._arc_hovered,
-        )
+        # 1. Серп месяца появляется ТОЛЬКО при наведении курсора на аватарку
+        if self._arc_hovered:
+            draw_volumetric_crescent(
+                painter=painter,
+                center=QPointF(self.cx, self.cy),
+                r_mid=self.arc_radius,
+                start_deg=40.0,
+                span_deg=100.0,
+                t_out=2.8,
+                t_in=2.4,
+                glow_color=QColor(253, 224, 71),
+                core_color=QColor(254, 240, 138),
+                night=cur_night,
+                is_active=True,
+                hovered=True,
+            )
 
         # 2. Функция отрисовки светящейся нити с искорками
         def draw_thread(p1: QPointF, p2: QPointF) -> None:
