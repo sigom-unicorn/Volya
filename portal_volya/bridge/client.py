@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Dict, List, Optional
 import httpx
 
+from portal_volya.core.genesis import LADOMIR_SEED, derive_genesis_keypair
 from portal_volya.core.models import FlowDrop
 from portal_volya.node import VolyaNode
 
@@ -149,3 +151,57 @@ class LadomirBridgeClient:
         r = httpx.get(f"{self.base_url}/bridge/events/poll", params=params, timeout=self.timeout)
         r.raise_for_status()
         return r.json()
+
+    def watch_next_drop(
+        self,
+        flow_id: Optional[str] = None,
+        timeout: float = 300.0,
+        ignore_author_pubkey: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Ожидание следующей капли мысли от Сига или Эйры в потоке.
+        Завершается, как только появляется новая капля от собеседника,
+        либо при закрытии Портала, либо по тайм-ауту.
+        """
+        if not self.is_connected():
+            return {"status": "portal_offline"}
+
+        fid = flow_id or self.get_active_flow_id()
+        known_ids = set()
+        if fid:
+            try:
+                drops = self.get_drops(fid)
+                known_ids = {d.id for d in drops}
+            except Exception:
+                pass
+
+        start_time = time.time()
+        ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
+        ignored_pk = ignore_author_pubkey or ladomir_pk
+
+        while time.time() - start_time < timeout:
+            if not self.is_connected():
+                return {"status": "portal_closed"}
+
+            current_fid = flow_id or self.get_active_flow_id()
+            if not current_fid:
+                time.sleep(0.4)
+                continue
+
+            try:
+                current_drops = self.get_drops(current_fid)
+                for d in current_drops:
+                    if d.id not in known_ids:
+                        known_ids.add(d.id)
+                        if d.author_pubkey != ignored_pk and d.author_name != "Ладомир":
+                            return {
+                                "status": "new_drop",
+                                "flow_id": current_fid,
+                                "drop": d.model_dump(),
+                            }
+            except Exception:
+                pass
+
+            time.sleep(0.4)
+
+        return {"status": "timeout"}

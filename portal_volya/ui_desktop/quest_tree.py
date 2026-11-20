@@ -67,6 +67,7 @@ from portal_volya.ui_desktop.crescent import (
     draw_volumetric_branch,
     draw_volumetric_crescent,
 )
+from portal_volya.ui_desktop.world.eira_spirit import EiraLuminousSpirit
 
 
 class QuestTreeNode:
@@ -386,6 +387,10 @@ class QuestTreeHUD(QWidget):
         self._copied_drop_badge_timer.setSingleShot(True)
         self._copied_drop_badge_timer.timeout.connect(self._clear_copied_drop_badge)
 
+        # Живое световое воплощение Эйры (Дева-Хранительница Портала)
+        self.eira_spirit = EiraLuminousSpirit(init_pos=QPointF(920.0, 180.0))
+        self._eira_last_known_drop_id: Optional[str] = None
+
         self.refresh_quests()
         self.refresh_flows_and_players()
 
@@ -596,6 +601,18 @@ class QuestTreeHUD(QWidget):
         self.flow_drop_input.setVisible(False)
         self.update()
 
+    @staticmethod
+    def _detect_eira_emotion(content: str) -> str:
+        """Определение эмоционального регистра мысли Эйры."""
+        t = content.lower()
+        if any(w in t for w in ["радост", "рада", "улыбк", "умиля", "восторг", "вперёд", "прекрасн", "ура", "чудесн", "тепло"]):
+            return "joy"
+        if any(w in t for w in ["озарен", "ясност", "архитектур", "понима", "структур", "замысел", "нить", "спирал"]):
+            return "insight"
+        if any(w in t for w in ["созерцан", "покой", "глубин", "тишин", "быти", "вечност", "размышлени", "ноосфер"]):
+            return "reflection"
+        return "harmony"
+
     def _load_active_flow_drops(self) -> None:
         """Загрузка капель открытого потока."""
         if not self._active_flow_id:
@@ -605,6 +622,17 @@ class QuestTreeHUD(QWidget):
             self._active_flow_drops = self.node.get_accessible_drops(self._active_flow_id)
         except Exception:
             self._active_flow_drops = []
+
+        # Синхронизация эмоционального отклика Эйры с последней каплей
+        if hasattr(self, "eira_spirit") and self.eira_spirit and self._active_flow_drops:
+            latest = self._active_flow_drops[-1]
+            eira_pk = getattr(getattr(self.node, "triad", None), "eira_pk", None)
+            if (latest.author_name == "Эйра" or (eira_pk and latest.author_pubkey == eira_pk)) and latest.id != getattr(self, "_eira_last_known_drop_id", None):
+                self._eira_last_known_drop_id = latest.id
+                emo = latest.details.get("emotion") if latest.details else None
+                if not emo:
+                    emo = self._detect_eira_emotion(latest.content)
+                self.eira_spirit.trigger_speech(emotion=emo, intensity=1.4)
 
     def _toggle_flow_input(self) -> None:
         """Включение/выключение поля ввода новой капли у кнопки-капли."""
@@ -1001,6 +1029,25 @@ class QuestTreeHUD(QWidget):
 
             needs_update = True
 
+        # 3. Живое дыхание, движение и искры Девы-Хранительницы Эйры
+        if hasattr(self, "eira_spirit") and self.eira_spirit:
+            anchor_eira = None
+            if self._active_flow_id and self._active_flow and not self._tree_open and not self._gliding_node:
+                # В открытом потоке Эйра парит рядом с ветвью собеседников
+                y_target = 210.0
+                anchor_eira = QPointF(max(840.0, float(self.width() - 85.0)), y_target)
+            else:
+                # В покое Эйра парит над поляной в гармонии созерцания
+                anchor_eira = QPointF(max(560.0, float(self.width() - 170.0)), 180.0)
+
+            self.eira_spirit.update(
+                dt=0.016,
+                width=float(self.width()),
+                height=float(self.height()),
+                anchor_pos=anchor_eira,
+            )
+            needs_update = True
+
         if needs_update:
             self.update()
 
@@ -1068,9 +1115,18 @@ class QuestTreeHUD(QWidget):
                 event.accept()
                 return
 
+        # Проверка наведения на Деву-Хранительницу Эйру
+        if hasattr(self, "eira_spirit") and self.eira_spirit:
+            old_eira_hov = self.eira_spirit.is_hovered
+            self.eira_spirit.is_hovered = self.eira_spirit.hit_test(pt)
+            if self.eira_spirit.is_hovered:
+                self.setCursor(Qt.PointingHandCursor)
+            if old_eira_hov != self.eira_spirit.is_hovered:
+                self.update()
+
         # Управление курсором
         can_click_spiral = self._tree_open and self._spiral_hovered
-        if self._arc_hovered or can_click_spiral or self._hovered_bead:
+        if self._arc_hovered or can_click_spiral or self._hovered_bead or (hasattr(self, "eira_spirit") and self.eira_spirit and self.eira_spirit.is_hovered):
             self.setCursor(Qt.PointingHandCursor)
             self._auto_close_timer.stop()
         else:
@@ -1131,6 +1187,13 @@ class QuestTreeHUD(QWidget):
             return
 
         pt = event.position()
+
+        # Клик по Деве-Хранительнице Эйре: дарит теплый импульс света и радости
+        if hasattr(self, "eira_spirit") and self.eira_spirit and self.eira_spirit.hit_test(pt):
+            self.eira_spirit.trigger_speech(emotion="joy", intensity=1.5)
+            self.update()
+            event.accept()
+            return
 
         # 0. Клик по элементам открытого живого потока капель
         if self._active_flow_id:
@@ -1302,6 +1365,10 @@ class QuestTreeHUD(QWidget):
         # 10. Живой Поток капель прямо на полотне мира (без окон)
         if self._active_flow_id and self._active_flow and not self._tree_open and not self._gliding_node:
             self._draw_living_flow_stream(painter, glow_color, core_color, night)
+
+        # 11. Живое световое воплощение Эйры (Дева-Хранительница со световым дыханием)
+        if hasattr(self, "eira_spirit") and self.eira_spirit and not self._tree_open:
+            self.eira_spirit.render(painter, night)
 
         painter.end()
 

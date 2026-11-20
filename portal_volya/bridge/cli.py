@@ -35,6 +35,11 @@ def main():
     listen_p = subparsers.add_parser("listen", help="Слушать поток капель в реальном времени")
     listen_p.add_argument("--flow-id", help="Идентификатор потока")
 
+    # watch-next
+    watch_p = subparsers.add_parser("watch-next", help="Ожидать следующую каплю мысли в потоке")
+    watch_p.add_argument("--flow-id", help="Идентификатор потока")
+    watch_p.add_argument("--timeout", type=float, default=300.0, help="Тайм-аут ожидания в секундах")
+
     args = parser.parse_args()
     client = LadomirBridgeClient()
 
@@ -97,6 +102,15 @@ def main():
                     author = d.get("author_name") or d.get("author_pubkey", "")[:8]
                     print(f"💧 [{d.get('created_at', '')[11:19]}] {author}: {d.get('content', '')}")
             time.sleep(0.5)
+
+    elif args.command == "watch-next":
+        import json
+        res = client.watch_next_drop(flow_id=args.flow_id, timeout=args.timeout)
+        print(json.dumps(res, ensure_ascii=False))
+        if res.get("status") in ("new_drop", "portal_closed"):
+            sys.exit(0)
+        else:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
