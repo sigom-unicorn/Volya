@@ -211,7 +211,7 @@ class QuestTreeHUD(QWidget):
         # Центр аватарки игрока в координатах окна
         self.avatar_center = QPointF(72.0, 72.0)
         self.avatar_radius = 48.0
-        self.arc_radius = 58.0
+        self.arc_radius = 54.0
 
         # Центр двойной спирали (на той же горизонтали правее, увеличено на 30%: 148 * 1.30 = 192.4 -> 264.0)
         self.spiral_center = QPointF(264.0, 72.0)
@@ -1001,10 +1001,10 @@ class QuestTreeHUD(QWidget):
         dx = pt.x() - self.avatar_center.x()
         dy = pt.y() - self.avatar_center.y()
         dist = math.hypot(dx, dy)
-        # Находится справа от центра (dx > 20) и в радиусе дуги +-14px
-        if dx > 20.0 and abs(dist - self.arc_radius) <= 16.0:
+        # Находится справа от центра (dx > 15) и в радиусе дуги +-12px
+        if dx > 15.0 and abs(dist - self.arc_radius) <= 12.0:
             angle_deg = math.degrees(math.atan2(dy, dx))
-            return -55.0 <= angle_deg <= 55.0
+            return -52.0 <= angle_deg <= 52.0
         return False
 
     def _is_near_spiral(self, pt: QPointF) -> bool:
@@ -1389,10 +1389,10 @@ class QuestTreeHUD(QWidget):
             painter,
             self.avatar_center,
             self.arc_radius,
-            -68.0,
-            136.0,
-            t_out=5.5,
-            t_in=4.5,
+            -50.0,
+            100.0,
+            t_out=3.4,
+            t_in=2.8,
             glow_color=glow_color,
             core_color=core_color,
             night=self.is_night(),
