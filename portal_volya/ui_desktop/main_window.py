@@ -349,6 +349,13 @@ class VolyaLivingWindow(QMainWindow):
         self.sacred_lock.switch_player_requested.connect(self._on_sacred_switch_player)
         self.sacred_lock.setVisible(not self.is_authenticated)
 
+        # Запуск Живого Моста связи с Ладомиром (Antigravity IPC)
+        try:
+            from portal_volya.bridge import start_bridge_server
+            self.bridge_server = start_bridge_server(self.node, self.quest_tree)
+        except Exception:
+            self.bridge_server = None
+
     def is_night(self) -> bool:
         """Определяет, день сейчас или вечер/ночь (по небесному полотну мира или системному времени)."""
         if hasattr(self, "world_widget") and self.world_widget:
@@ -575,6 +582,11 @@ class VolyaLivingWindow(QMainWindow):
             super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
+        if hasattr(self, "bridge_server") and self.bridge_server:
+            try:
+                self.bridge_server.stop()
+            except Exception:
+                pass
         if hasattr(self, "world_widget") and self.world_widget:
             self.world_widget.close()
         if self._own_node and hasattr(self, "node") and self.node:
