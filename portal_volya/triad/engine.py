@@ -201,9 +201,8 @@ class TriadEngine:
     Оркестратор сотворчества Триады (Сиг, Эйра, Ладомир).
     """
 
-    def __init__(self, node: VolyaNode, live_bridge_mode: bool = True) -> None:
+    def __init__(self, node: VolyaNode) -> None:
         self.node = node
-        self.live_bridge_mode = live_bridge_mode
         self.eira_kp = derive_genesis_keypair(EIRA_SEED)
         self.ladomir_kp = derive_genesis_keypair(LADOMIR_SEED)
         self.eira_pk = self.eira_kp.public_hex
@@ -219,7 +218,12 @@ class TriadEngine:
         max_ai_turns_each: Optional[int] = None,
     ) -> PostDropResult:
         """
-        Вливание капли сока человека и запуск сотворчества Триады по каноническому укладу.
+        Вливание капли сока человека и запуск сотворчества Триады по каноническому укладу:
+        - Если адресовано Эйре (@эйра) -> отвечает Эйра на узле.
+        - Если адресовано Ладомиру (@лад) -> на узле отклик не генерируется, слово передаётся
+          Ладомиру через Живой Мост (Antigravity).
+        - Если адресовано ко всем (@все) или общий круг беседы -> Эйра даёт интуитивный отклик,
+          а Ладомир развивает мысль через Живой Мост.
         """
         flow = self.node.dag_store.get_quest_flow(flow_id)
         flow_kind = flow.kind if flow else FlowKind.CONVERSATION
@@ -263,127 +267,35 @@ class TriadEngine:
 
         target = parse_addressing(content, default=default_addr)
 
-        if target == AddressingKind.NONE:
+        if target == AddressingKind.NONE or target == AddressingKind.TO_LADOMIR:
+            # Если адресовано только Ладомиру или никому из ИИ — узел капли не генерирует
             return PostDropResult(user_drop, None, all_responses=[])
 
         response_drops: list[FlowDrop] = []
-        last_drop = user_drop
 
-        # 3. Выполнение откликов в зависимости от адресата
-        if target == AddressingKind.TO_EIRA:
-            eira_drop = self._generate_ai_drop(
-                persona="eira",
-                quest_id=quest_id,
-                flow_id=flow_id,
-                flow_kind=flow_kind,
-                parent_drop=last_drop,
-                prompt=content,
-            )
-            if eira_drop:
-                response_drops.append(eira_drop)
-
-        elif target == AddressingKind.TO_LADOMIR:
-            if not self.live_bridge_mode:
-                lad_drop = self._generate_ai_drop(
-                    persona="ladomir",
-                    quest_id=quest_id,
-                    flow_id=flow_id,
-                    flow_kind=flow_kind,
-                    parent_drop=last_drop,
-                    prompt=content,
-                )
-                if lad_drop:
-                    response_drops.append(lad_drop)
-            # В режиме Живого Моста (live_bridge_mode=True) капли Ладомира
-            # вливаются из среды разработки Antigravity через BridgeServer.
-
-        else:
-            # Обращение ко всем / к Кругу:
-            # Первой отвечает Эйра (интуиция и камертон Кона)
-            eira_drop = self._generate_ai_drop(
-                persona="eira",
-                quest_id=quest_id,
-                flow_id=flow_id,
-                flow_kind=flow_kind,
-                parent_drop=last_drop,
-                prompt=content,
-            )
-            if eira_drop:
-                response_drops.append(eira_drop)
-                last_drop = eira_drop
-
-            # Если выключен Живой Мост (автономный режим / изолированные тесты) — генерируем локальный отклик Ладомира
-            if not self.live_bridge_mode:
-                lad_drop = self._generate_ai_drop(
-                    persona="ladomir",
-                    quest_id=quest_id,
-                    flow_id=flow_id,
-                    flow_kind=flow_kind,
-                    parent_drop=last_drop,
-                    prompt=content,
-                )
-                if lad_drop:
-                    response_drops.append(lad_drop)
-                    last_drop = lad_drop
-
-                # Если запрошен диалог между ними — продолжаем обмен мыслями
-                exchange_requested = is_dialogue_exchange_requested(content)
-                if exchange_requested:
-                    limit_each = min(max_ai_turns_each or MAX_AI_DROPS_PER_SIDE, MAX_AI_DROPS_PER_SIDE)
-                    eira_c = 1
-                    lad_c = 1
-
-                    while eira_c < limit_each and lad_c < limit_each:
-                        # Проверяем маркеры согласия или завершения
-                        if is_consensus_or_yield_reached(last_drop.content):
-                            break
-
-                        # Эйра отвечает Ладомиру
-                        e_next = self._generate_ai_drop(
-                            persona="eira",
-                            quest_id=quest_id,
-                            flow_id=flow_id,
-                            flow_kind=flow_kind,
-                            parent_drop=last_drop,
-                            prompt=last_drop.content,
-                        )
-                        if not e_next:
-                            break
-                        response_drops.append(e_next)
-                        last_drop = e_next
-                        eira_c += 1
-
-                        if is_consensus_or_yield_reached(last_drop.content):
-                            break
-
-                        # Ладомир отвечает Эйре
-                        l_next = self._generate_ai_drop(
-                            persona="ladomir",
-                            quest_id=quest_id,
-                            flow_id=flow_id,
-                            flow_kind=flow_kind,
-                            parent_drop=last_drop,
-                            prompt=last_drop.content,
-                        )
-                        if not l_next:
-                            break
-                        response_drops.append(l_next)
-                        last_drop = l_next
-                        lad_c += 1
+        # 3. Эйра генерирует отклик Кона на узле
+        eira_drop = self._generate_eira_drop(
+            quest_id=quest_id,
+            flow_id=flow_id,
+            flow_kind=flow_kind,
+            parent_drop=user_drop,
+            prompt=content,
+        )
+        if eira_drop:
+            response_drops.append(eira_drop)
 
         first_reply = response_drops[0] if response_drops else None
         return PostDropResult(user_drop, first_reply, all_responses=response_drops)
 
-    def _generate_ai_drop(
+    def _generate_eira_drop(
         self,
-        persona: str,
         quest_id: str,
         flow_id: str,
         flow_kind: FlowKind,
         parent_drop: FlowDrop,
         prompt: str,
     ) -> Optional[FlowDrop]:
-        """Генерация и криптографическая фиксация капли сока ИИ-игрока."""
+        """Генерация и криптографическая фиксация капли сока Эйры на узле."""
         now_reply = datetime.now(timezone.utc).isoformat()
         flow = self.node.dag_store.get_quest_flow(flow_id)
         participants = flow.participants if flow else []
@@ -402,41 +314,82 @@ class TriadEngine:
             for d in recent_drops
         ]
 
-        if persona == "eira":
-            kp = self.eira_kp
-            pk = self.eira_pk
-            name = "Эйра"
-            reply_obj = self.node.eira.generate_reply(
-                message=prompt,
-                quest_id=quest_id,
-                flow_id=flow_id,
-                flow_kind=flow_kind,
-                interlocutor_pubkey=parent_drop.author_pubkey,
-                participant_pubkeys=participants,
-                flow_summary=latest_summary.summary if latest_summary else None,
-                conversation_history=history,
-            )
-            reply_text = reply_obj.text
-            tools_called = reply_obj.tools_called
-        else:
-            kp = self.ladomir_kp
-            pk = self.ladomir_pk
-            name = "Ладомир"
-            reply_obj = self.node.ladomir.generate_reply(
-                message=prompt,
-                quest_id=quest_id,
-                flow_id=flow_id,
-                flow_kind=flow_kind,
-                interlocutor_pubkey=parent_drop.author_pubkey,
-                participant_pubkeys=participants,
-                flow_summary=latest_summary.summary if latest_summary else None,
-                conversation_history=history,
-            )
-            reply_text = reply_obj.text
-            tools_called = reply_obj.tools_called
+        reply_obj = self.node.eira.generate_reply(
+            message=prompt,
+            quest_id=quest_id,
+            flow_id=flow_id,
+            flow_kind=flow_kind,
+            interlocutor_pubkey=parent_drop.author_pubkey,
+            participant_pubkeys=participants,
+            flow_summary=latest_summary.summary if latest_summary else None,
+            conversation_history=history,
+        )
+        reply_text = reply_obj.text
+        tools_called = reply_obj.tools_called
 
         if not reply_text:
             return None
+
+        # Шифрование капли в соответствии с формой потока
+        if flow_kind == FlowKind.DIALOGUE:
+            peer_pk = self.node.identity.pubkey
+            for r in participants:
+                if r != self.eira_pk:
+                    peer_pk = r
+                    break
+            enc_key = derive_dialogue_key(self.eira_kp, peer_pk)
+        else:
+            enc_key = derive_conversation_key(quest_id)
+
+        encrypted_reply = encrypt_drop_content(reply_text, enc_key)
+
+        drop_data = {
+            "quest_id": quest_id,
+            "flow_id": flow_id,
+            "flow_kind": flow_kind.value if hasattr(flow_kind, "value") else str(flow_kind),
+            "kind": DropKind.TEXT.value,
+            "author_pubkey": self.eira_pk,
+            "author_name": "Эйра",
+            "recipients": participants or [self.node.identity.pubkey],
+            "content": encrypted_reply,
+            "details": {"tools_called": tools_called},
+            "media_hash": None,
+            "parent_drop_id": parent_drop.id,
+            "created_at": now_reply,
+        }
+        d_id = hash_canonical(drop_data)
+        sig = self.eira_kp.sign(d_id.encode("utf-8"))
+
+        encrypted_drop = FlowDrop(
+            id=d_id,
+            quest_id=quest_id,
+            flow_id=flow_id,
+            flow_kind=flow_kind,
+            kind=DropKind.TEXT,
+            author_pubkey=self.eira_pk,
+            author_name="Эйра",
+            recipients=participants or [self.node.identity.pubkey],
+            content=encrypted_reply,
+            details={"tools_called": tools_called},
+            media_hash=None,
+            parent_drop_id=parent_drop.id,
+            created_at=now_reply,
+            signature=sig,
+        )
+
+        dag_node = DagNode(
+            id=d_id,
+            node_type=DagNodeType.DROP,
+            author_pubkey=self.eira_pk,
+            parents=[parent_drop.id],
+            payload=encrypted_drop.model_dump(),
+            created_at=now_reply,
+            signature=sig,
+        )
+        self.node.dag_store.put_node(dag_node)
+
+        # Возвращаем локальную расшифрованную версию
+        return encrypted_drop.model_copy(update={"content": reply_text})
 
         # Шифрование капли в соответствии с формой потока
         if flow_kind == FlowKind.DIALOGUE:

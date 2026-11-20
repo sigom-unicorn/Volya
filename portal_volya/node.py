@@ -55,7 +55,7 @@ from portal_volya.ui_desktop.avatar_generator import (
     process_custom_avatar_png,
 )
 from portal_volya.eira import EiraPlayer, EiraReply
-from portal_volya.ladomir import LadomirPlayer, LadomirReply
+from portal_volya.ladomir import build_ladomir_system_prompt, get_ladomir_player
 from portal_volya.triad import TriadEngine, PostDropResult
 from portal_volya.storage.dag_store import DagStore
 from portal_volya.storage.identity import SovereignIdentity, get_or_create_identity
@@ -108,11 +108,10 @@ class VolyaNode:
         ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
         self._ensure_avatar_exists(ladomir_pk, "Ладомир")
 
-        # 3. Суверенные вольные игроки ИИ на локальном узле (Эйра и Ладомир)
+        # 3. Суверенная спутница Эйра на локальном узле
         self.eira = EiraPlayer(store=self.dag_store)
-        self.ladomir = LadomirPlayer(store=self.dag_store)
 
-        # 4. Движок Триады (сотворчество Сига, Эйры и Ладомира)
+        # 4. Движок Триады (сотворчество Сига, Эйры и Ладомира через Живой Мост)
         self.triad = TriadEngine(node=self)
 
     def close(self) -> None:
@@ -929,42 +928,6 @@ class VolyaNode:
     def ask_eira_ephemeral(self, question: str, quest_id: Optional[str] = None) -> EiraReply:
         """Быстрый запрос к разуму Эйры без обязательной фиксации капли в Merkle DAG."""
         return self.eira.generate_reply(
-            message=question,
-            quest_id=quest_id,
-            flow_kind=FlowKind.DIALOGUE,
-            interlocutor_pubkey=self.identity.pubkey,
-        )
-
-    def ask_ladomir(
-        self,
-        content: str,
-        flow_id: Optional[str] = None,
-        quest_id: Optional[str] = None,
-        parent_drop_id: Optional[str] = None,
-        created_at: Optional[str] = None,
-    ) -> tuple[FlowDrop, FlowDrop]:
-        """
-        Взаимодействие вольного игрока с Ладомиром в диалоге:
-        1. Вливает каплю игрока в поток сока.
-        2. Запрашивает отклик Ладомира по Кону, Ладу и ноосферной этике.
-        3. Фиксирует ответ в Merkle DAG с подписью Ладомира.
-        4. Возвращает пару капель: (капля_игрока, капля_ладомира).
-        """
-        target_quest_id = quest_id or "quest-portal-volya"
-        target_flow_id = flow_id or f"flow-dialogue-ladomir-{self.identity.pubkey[:12]}"
-        res = self.triad.post_drop_and_respond(
-            quest_id=target_quest_id,
-            flow_id=target_flow_id,
-            content=content,
-            kind=DropKind.TEXT,
-            parent_drop_id=parent_drop_id,
-        )
-        first_ai = res.first_reply or res.user_drop
-        return res.user_drop, first_ai
-
-    def ask_ladomir_ephemeral(self, question: str, quest_id: Optional[str] = None) -> LadomirReply:
-        """Быстрый запрос к разуму Ладомира без обязательной фиксации капли в Merkle DAG."""
-        return self.ladomir.generate_reply(
             message=question,
             quest_id=quest_id,
             flow_kind=FlowKind.DIALOGUE,
