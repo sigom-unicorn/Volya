@@ -81,6 +81,7 @@ def test_triad_single_addressing_in_flow():
             title="Беседа Триады",
             participants=[eira_pk, lad_pk],
         )
+        node.triad.live_bridge_mode = False
 
         # 1. Сиг обращается к Эйре -> отвечает ТОЛЬКО Эйра
         res_eira = node.post_flow_drop(
@@ -136,6 +137,7 @@ def test_triad_ai_exchange_and_limits():
             title="Диалог ИИ о Конах",
             participants=[eira_pk, lad_pk],
         )
+        node.triad.live_bridge_mode = False
 
         # Сиг просит обсудить, задаем лимит 3 капли с каждой стороны для быстрого теста
         res = node.post_flow_drop(
