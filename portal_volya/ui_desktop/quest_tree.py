@@ -1890,27 +1890,25 @@ class QuestTreeHUD(QWidget):
         if self._hovered_bead:
             text = self._hovered_bead.quest.title
             pos = self._hovered_bead.current_pos
-        elif self._spiral_hovered:
+        elif self._spiral_hovered or (self.has_selected_quest and self._flow_menu_mode != "none"):
             pos = self.spiral_center
-            # Если выбран другой квест и дерево закрыто — подсказка показывает имя выбранного квеста
-            if self.has_selected_quest and self.active_quest_id != "quest-volya-root" and not self._tree_open:
-                text = self.active_quest_title
-            else:
-                # Для квеста «Воля» подсказки нет вообще
-                text = ""
+            text = self.active_quest_title
 
-        # Для квеста «Воля» подсказки нет вообще
-        if not text or text.strip() == "Воля":
+        if not text:
             return
 
         font = QFont("Georgia", 11)
         fm = QFontMetrics(font)
         text_w = fm.horizontalAdvance(text)
         cloud_w = max(56.0, text_w + 24.0)
-        cloud_h = 28.0
+        cloud_h = 26.0
 
         cloud_x = pos.x() - cloud_w / 2.0
-        cloud_y = pos.y() + 34.0
+        if pos == self.spiral_center:
+            # СВЕРХУ над медальоном квеста по слову Сига!
+            cloud_y = pos.y() - self.spiral_radius - cloud_h - 6.0
+        else:
+            cloud_y = pos.y() + 18.0
         cloud_rect = QRectF(cloud_x, cloud_y, cloud_w, cloud_h)
 
         night = self.is_night()
@@ -1927,7 +1925,7 @@ class QuestTreeHUD(QWidget):
 
         painter.setPen(cloud_pen)
         painter.setBrush(cloud_brush)
-        painter.drawRoundedRect(cloud_rect, 14.0, 14.0)
+        painter.drawRoundedRect(cloud_rect, 13.0, 13.0)
 
         painter.setFont(font)
         painter.setPen(text_color)
@@ -2050,18 +2048,40 @@ class QuestTreeHUD(QWidget):
                         self.setCursor(Qt.PointingHandCursor)
                         return True
 
-        # 5. Если курсор вне активных зон — запускаем мягкий таймер затухания
+        # 5. Если курсор вне активных зон — скрываем серп
+        dx = pt.x() - self.spiral_center.x()
+        dy = pt.y() - self.spiral_center.y()
+        ang_deg = math.degrees(math.atan2(dy, dx))
+        is_over_crescent = (38.0 <= dist_quest <= 56.0) and (-65.0 <= ang_deg <= 135.0)
+
         in_active_zone = False
-        if self._flow_menu_mode in ("both", "select"):
-            if 240.0 <= pt.x() <= 580.0 and 20.0 <= pt.y() <= 340.0:
+        if dist_quest <= (self.spiral_radius + 4.0) or is_over_crescent:
+            in_active_zone = True
+        elif d_dia <= 16.0 or d_conv <= 16.0 or d_seg <= 18.0:
+            in_active_zone = True
+        elif self._sel_flow_kind is not None:
+            # Зона раскрытого списка потоков
+            stem_x = 392.0
+            flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
+            y_max_flows = 89.2 + 48.0 + max(1, len(flows)) * 36.0 + 20.0
+            if (stem_x - 30.0) <= pt.x() <= (stem_x + 240.0) and 35.0 <= pt.y() <= y_max_flows:
                 in_active_zone = True
-        if self._flow_menu_mode in ("both", "create"):
-            if 160.0 <= pt.x() <= 620.0 and 50.0 <= pt.y() <= 520.0:
+        elif self._create_step in ("title", "players"):
+            # Зона полей ввода и подтверждения создания потока
+            if 150.0 <= pt.x() <= 620.0 and 110.0 <= pt.y() <= 460.0:
                 in_active_zone = True
 
         if not in_active_zone and self._flow_menu_mode != "none":
-            if not self._flow_close_timer.isActive():
-                self._flow_close_timer.start(700)
+            # При уходе курсора с аватара и серпа — сразу скрываем, как просил Сиг!
+            if self._create_step == "idle" and self._sel_flow_kind is None:
+                self._flow_menu_mode = "none"
+                self._hovered_flow_kind_disc = None
+                self._hovered_create_segment = None
+                self._spiral_hovered = False
+                self.update()
+            else:
+                if not self._flow_close_timer.isActive():
+                    self._flow_close_timer.start(350)
 
         return False
 
@@ -2146,7 +2166,7 @@ class QuestTreeHUD(QWidget):
     def _draw_flow_selection_and_creation(
         self, painter: QPainter, glow_color: QColor, core_color: QColor
     ) -> None:
-        """Отрисовка дуг и органов управления Потоками сотворчества у выбранного квеста."""
+        """Отрисовка единого объемного серпа месяца и органов управления Потоками у выбранного квеста."""
         if self._flow_menu_mode == "none":
             return
 
@@ -2154,31 +2174,20 @@ class QuestTreeHUD(QWidget):
         quest_center = self.spiral_center  # QPointF(264.0, 72.0)
         arc_radius = 46.0
 
-        # 1. Правая дуга (Выбор потока)
-        if self._flow_menu_mode in ("both", "select"):
-            self._draw_right_flow_selection_arc(painter, quest_center, arc_radius, glow_color, core_color, night)
+        is_hovered = (
+            self._hovered_flow_kind_disc is not None
+            or self._sel_flow_kind is not None
+            or self._hovered_create_segment is not None
+            or self._spiral_hovered
+        )
 
-        # 2. Нижняя дуга (Создание потока)
-        if self._flow_menu_mode in ("both", "create"):
-            self._draw_bottom_flow_creation_arc(painter, quest_center, arc_radius, glow_color, core_color, night)
-
-    def _draw_right_flow_selection_arc(
-        self,
-        painter: QPainter,
-        center: QPointF,
-        radius: float,
-        glow_color: QColor,
-        core_color: QColor,
-        night: bool,
-    ) -> None:
-        """Отрисовка правой дуги выбора потока в виде объемного серпа с кружками-типами (Диалог и Беседа)."""
-        is_hovered = (self._hovered_flow_kind_disc is not None or self._sel_flow_kind is not None)
+        # 1. Единый 3D серп месяца (объединяет правую и нижнюю дуги в один непрерывный месяц от -58° до +128°)
         self._draw_volumetric_crescent(
             painter,
-            center,
-            radius,
-            -65.0,
-            130.0,
+            quest_center,
+            arc_radius,
+            -58.0,
+            186.0,
             t_out=4.5,
             t_in=4.0,
             glow_color=glow_color,
@@ -2188,24 +2197,30 @@ class QuestTreeHUD(QWidget):
             hovered=is_hovered,
         )
 
-        # Точки кружков на дуге:
-        # Диалог (-22°) и Беседа (+22°)
-        c_dia = QPointF(306.6, 54.8)
-        c_conv = QPointF(306.6, 89.2)
+        # Центры кружков на едином серпе:
+        c_dia = QPointF(306.6, 54.8)    # Диалог (-22°)
+        c_conv = QPointF(306.6, 89.2)   # Беседа (+22°)
+        c_seg = QPointF(quest_center.x(), quest_center.y() + arc_radius)  # Создание (+90°)
 
-        # 1. СНАЧАЛА отрисовываем ветвь со списком потоков:
-        # Она начинается ИЗ-ПОД кружка снизу, а не поверх его центра!
+        # 2. Если выбран тип потока в списке — ветвь со списком вырастает из-под кружка
         if self._sel_flow_kind in (FlowKind.DIALOGUE, FlowKind.CONVERSATION):
             start_p = c_dia if self._sel_flow_kind == FlowKind.DIALOGUE else c_conv
             self._draw_flow_stream_branches(painter, start_p, self._sel_flow_kind, glow_color, core_color, night)
 
-        # 2. Отрисовка кружка «Диалог» поверх основания ветви
+        # 3. Кружок «Диалог» (-22°)
         is_dia_hovered = (self._hovered_flow_kind_disc == FlowKind.DIALOGUE or self._sel_flow_kind == FlowKind.DIALOGUE)
         self._draw_flow_type_circle(painter, c_dia, 13.0, FlowKind.DIALOGUE, is_dia_hovered, glow_color, core_color, night)
 
-        # 3. Отрисовка кружка «Беседа» поверх основания ветви
+        # 4. Кружок «Беседа» (+22°)
         is_conv_hovered = (self._hovered_flow_kind_disc == FlowKind.CONVERSATION or self._sel_flow_kind == FlowKind.CONVERSATION)
         self._draw_flow_type_circle(painter, c_conv, 13.0, FlowKind.CONVERSATION, is_conv_hovered, glow_color, core_color, night)
+
+        # 5. Сегментированный кружок создания потока (+90°)
+        self._draw_creation_segmented_circle(painter, c_seg, 16.0, glow_color, core_color, night)
+
+        # 6. Если нажат сегмент — веточка вниз к полю ввода названия
+        if self._create_step in ("title", "players"):
+            self._draw_creation_stem_to_input(painter, c_seg, glow_color, core_color, night)
 
     def _draw_flow_type_circle(
         self,
@@ -2374,43 +2389,6 @@ class QuestTreeHUD(QWidget):
             painter.setFont(font)
             painter.setPen(text_color)
             painter.drawText(pill_rect, Qt.AlignCenter, flow.title)
-
-    def _draw_bottom_flow_creation_arc(
-        self,
-        painter: QPainter,
-        center: QPointF,
-        radius: float,
-        glow_color: QColor,
-        core_color: QColor,
-        night: bool,
-    ) -> None:
-        """Отрисовка нижней дуги создания потока в виде объемного серпа с разделенным на сегменты кружком."""
-        # Если сектор активирован (выбран тип потока) — дуга не рисуется по слову Сига!
-        is_activated = (self._create_flow_kind is not None or self._create_step in ("title", "players"))
-        if not is_activated:
-            is_hovered = (self._hovered_create_segment is not None)
-            self._draw_volumetric_crescent(
-                painter,
-                center,
-                radius,
-                25.0,
-                130.0,
-                t_out=4.5,
-                t_in=4.0,
-                glow_color=glow_color,
-                core_color=core_color,
-                night=night,
-                is_active=True,
-                hovered=is_hovered,
-            )
-
-        # Центр сегментированного кружка на нижней дуге (90°)
-        c_seg = QPointF(center.x(), center.y() + radius)  # (264.0, 118.0)
-        self._draw_creation_segmented_circle(painter, c_seg, 16.0, glow_color, core_color, night)
-
-        # Если нажат сегмент — веточка вниз к полю ввода названия
-        if self._create_step in ("title", "players"):
-            self._draw_creation_stem_to_input(painter, c_seg, glow_color, core_color, night)
 
     def _draw_creation_segmented_circle(
         self,
