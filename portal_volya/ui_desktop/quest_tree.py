@@ -1950,84 +1950,93 @@ class QuestTreeHUD(QWidget):
         d_conv = math.hypot(pt.x() - c_conv.x(), pt.y() - c_conv.y())
         d_seg = math.hypot(pt.x() - c_seg.x(), pt.y() - c_seg.y())
 
-        # 1. Наведение на сам выбранный квест -> раскрываются ОБЕ дуги
-        if dist_quest <= (self.spiral_radius + 6.0):
+        # 1. Наведение на сам выбранный квест -> раскрывается единый месяц
+        if dist_quest <= (self.spiral_radius + 4.0):
             if self._flow_menu_mode == "none":
                 self._flow_menu_mode = "both"
                 self.refresh_flows_and_players()
+            # Когда указатель на аватаре квеста — ни одна кнопка не активна и ветви скрыты
+            self._hovered_flow_kind_disc = None
+            self._sel_flow_kind = None
+            self._hovered_create_segment = None
             self._flow_close_timer.stop()
             self.setCursor(Qt.PointingHandCursor)
             return True
 
-        # 2. Если меню открыто в режиме "both", фокус на дугу скрывает другую:
-        if self._flow_menu_mode == "both":
-            # Движение вправо к дуге выбора
-            if pt.x() > (self.spiral_center.x() + 20.0) and abs(pt.y() - self.spiral_center.y()) < 50.0:
-                self._flow_menu_mode = "select"
-                if not self._sel_flow_kind:
-                    self._sel_flow_kind = FlowKind.DIALOGUE
-            # Движение вниз к дуге создания
-            elif pt.y() > (self.spiral_center.y() + 22.0) and abs(pt.x() - self.spiral_center.x()) < 50.0:
-                self._flow_menu_mode = "create"
-
-        # 3. Интерактив режима выбора потоков (Правая дуга)
-        if self._flow_menu_mode in ("both", "select"):
-            if d_dia <= 15.0:
-                self._hovered_flow_kind_disc = FlowKind.DIALOGUE
-                self._sel_flow_kind = FlowKind.DIALOGUE
-                self._flow_menu_mode = "select"
-                self._flow_close_timer.stop()
-                self.setCursor(Qt.PointingHandCursor)
-                return True
-            elif d_conv <= 15.0:
-                self._hovered_flow_kind_disc = FlowKind.CONVERSATION
-                self._sel_flow_kind = FlowKind.CONVERSATION
-                self._flow_menu_mode = "select"
-                self._flow_close_timer.stop()
-                self.setCursor(Qt.PointingHandCursor)
-                return True
+        # 2. Интерактив кнопок на серпе месяца:
+        if d_dia <= 15.0:
+            # Наведение на «Диалог» (-22°) -> кнопка активна, ветвь раскрыта
+            self._hovered_flow_kind_disc = FlowKind.DIALOGUE
+            self._sel_flow_kind = FlowKind.DIALOGUE
+            self._flow_menu_mode = "select"
+            self._hovered_create_segment = None
+            self._flow_close_timer.stop()
+            self.setCursor(Qt.PointingHandCursor)
+            return True
+        elif d_conv <= 15.0:
+            # Наведение на «Беседа» (+22°) -> кнопка активна, ветвь раскрыта
+            self._hovered_flow_kind_disc = FlowKind.CONVERSATION
+            self._sel_flow_kind = FlowKind.CONVERSATION
+            self._flow_menu_mode = "select"
+            self._hovered_create_segment = None
+            self._flow_close_timer.stop()
+            self.setCursor(Qt.PointingHandCursor)
+            return True
+        elif d_seg <= 17.0:
+            # Наведение на сегментированный диск создания (+90°)
+            self._flow_menu_mode = "create"
+            self._sel_flow_kind = None
+            self._hovered_flow_kind_disc = None
+            if pt.x() <= 264.0:
+                self._hovered_create_segment = FlowKind.DIALOGUE
             else:
-                self._hovered_flow_kind_disc = None
+                self._hovered_create_segment = FlowKind.CONVERSATION
+            self._flow_close_timer.stop()
+            self.setCursor(Qt.PointingHandCursor)
+            return True
+        else:
+            self._hovered_create_segment = None
 
-            # Проверка наведения на элементы списка потоков
-            if self._sel_flow_kind:
-                flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
+        # 3. Интерактив раскрытого списка потоков (если выбрана категория)
+        if self._sel_flow_kind:
+            flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
+            start_y = 54.8 if self._sel_flow_kind == FlowKind.DIALOGUE else 89.2
+            stem_x = 392.0
+            count = max(1, len(flows))
+            y_last = (start_y + 48.0) + count * 36.0 + 20.0
+
+            # Коридор от кнопки к списку и сам список
+            in_bridge = (300.0 <= pt.x() <= (stem_x + 35.0) and abs(pt.y() - start_y) <= 22.0)
+            in_list = (stem_x <= pt.x() <= (stem_x + 250.0) and (start_y + 20.0) <= pt.y() <= y_last)
+
+            if in_bridge or in_list:
                 self._hovered_flow_item = None
-                start_y = 54.8 if self._sel_flow_kind == FlowKind.DIALOGUE else 89.2
-                stem_x = 392.0
                 for idx, f in enumerate(flows):
                     y_f = (start_y + 48.0) + idx * 36.0
                     r_f = QRectF(stem_x + 30.0, y_f - 14.0, 200.0, 28.0)
                     if r_f.contains(pt):
                         self._hovered_flow_item = f
-                        self._flow_close_timer.stop()
-                        self.setCursor(Qt.PointingHandCursor)
-                        return True
+                        break
+                self._flow_close_timer.stop()
+                self.setCursor(Qt.PointingHandCursor if self._hovered_flow_item else Qt.ArrowCursor)
+                return True
+            else:
+                # Курсор вышел из зоны списка и кнопки — ветвь скрывается, кнопка гаснет!
+                self._sel_flow_kind = None
+                self._hovered_flow_item = None
+                self._hovered_flow_kind_disc = None
 
-        # 4. Интерактив режима создания потока (Нижняя дуга)
-        if self._flow_menu_mode in ("both", "create"):
-            if d_seg <= 17.0:
-                self._flow_menu_mode = "create"
-                if pt.x() <= 264.0:
-                    self._hovered_create_segment = FlowKind.DIALOGUE
-                else:
-                    self._hovered_create_segment = FlowKind.CONVERSATION
+        # 4. Проверка создания потока
+        if self._create_step in ("title", "players"):
+            # Проверка кнопки '>' перехода к игрокам
+            c_next_in = QPointF(self.flow_title_input.x() + self.flow_title_input.width() - 14.0, 184.0)
+            if math.hypot(pt.x() - c_next_in.x(), pt.y() - c_next_in.y()) <= 15.0 or (330.0 <= pt.x() <= 385.0 and 168.0 <= pt.y() <= 200.0):
+                self._hovered_create_next_btn = True
                 self._flow_close_timer.stop()
                 self.setCursor(Qt.PointingHandCursor)
                 return True
             else:
-                self._hovered_create_segment = None
-
-            # Проверка кнопки '>' перехода к игрокам
-            if self._create_step in ("title", "players"):
-                c_next_in = QPointF(self.flow_title_input.x() + self.flow_title_input.width() - 14.0, 184.0)
-                if math.hypot(pt.x() - c_next_in.x(), pt.y() - c_next_in.y()) <= 15.0 or (330.0 <= pt.x() <= 385.0 and 168.0 <= pt.y() <= 200.0):
-                    self._hovered_create_next_btn = True
-                    self._flow_close_timer.stop()
-                    self.setCursor(Qt.PointingHandCursor)
-                    return True
-                else:
-                    self._hovered_create_next_btn = False
+                self._hovered_create_next_btn = False
 
             # Проверка кнопки подтверждения '✔' для беседы
             if self._create_step == "players" and self._create_flow_kind == FlowKind.CONVERSATION:
