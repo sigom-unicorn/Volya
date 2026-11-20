@@ -10,6 +10,7 @@ __pycache__/
 *$py.class
 *.log
 manifest_temp.pdf
+scratch/
 
 # Базы данных и сокровенные ключи узла (Local Vault)
 *.db
