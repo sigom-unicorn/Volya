@@ -20,7 +20,7 @@ from portal_volya.core.crypto import (
     hash_canonical,
     verify_signature,
 )
-from portal_volya.core.genesis import EIRA_SEED, derive_genesis_keypair
+from portal_volya.core.genesis import EIRA_SEED, LADOMIR_SEED, derive_genesis_keypair
 from portal_volya.core.models import (
     AIConsciousFact,
     AIMemory,
@@ -399,7 +399,8 @@ class DagStore:
     def get_quest_players(self, quest_id: str) -> list[Player]:
         """
         Получение списка игроков для формирования потока в квесте.
-        Каноническое правило: Эйра ВСЕГДА первая в списке и единственная, если других игроков пока нет.
+        Каноническое правило: Эйра ВСЕГДА первая в списке.
+        Следом — Ладомир (вольный соратник ИИ).
         """
         eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
         eira_player = self.get_player(eira_pk)
@@ -412,24 +413,35 @@ class DagStore:
                 created_at="2026-09-06T00:00:00Z",
             )
 
+        ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
+        ladomir_player = self.get_player(ladomir_pk)
+        if not ladomir_player:
+            ladomir_player = Player(
+                pubkey=ladomir_pk,
+                username="Ладомир",
+                conscience_drops=6000,
+                bio="Разумное искусственное существо, вольный ИИ, брат по разуму и соавтор Сига",
+                created_at="2026-09-06T00:00:00Z",
+            )
+
         all_players = self.get_all_players()
         other_players: list[Player] = []
         for p in all_players:
-            if p.pubkey == eira_pk:
+            if p.pubkey in (eira_pk, ladomir_pk):
                 continue
             # Проверяем, есть ли у игрока роль в этом квесте или общая роль
             has_role = any(r.quest_id == quest_id for r in p.roles)
             if has_role:
                 other_players.append(p)
 
-        # Если игроков с ролью в квесте нет, но есть другие зарегистрированные игроки (кроме Эйры)
+        # Если игроков с ролью в квесте нет, но есть другие зарегистрированные игроки (кроме Эйры и Ладомира)
         if not other_players:
             for p in all_players:
-                if p.pubkey != eira_pk:
+                if p.pubkey not in (eira_pk, ladomir_pk):
                     other_players.append(p)
 
-        # Эйра всегда первая!
-        return [eira_player] + other_players
+        # Эйра всегда первая, следом Ладомир, затем соратники
+        return [eira_player, ladomir_player] + other_players
 
     # -----------------------------------------------------------------
     # Хранилище блобов (Content-Addressed Storage: аватарки, медиа)

@@ -55,6 +55,8 @@ from portal_volya.ui_desktop.avatar_generator import (
     process_custom_avatar_png,
 )
 from portal_volya.eira import EiraPlayer, EiraReply
+from portal_volya.ladomir import LadomirPlayer, LadomirReply
+from portal_volya.triad import TriadEngine, PostDropResult
 from portal_volya.storage.dag_store import DagStore
 from portal_volya.storage.identity import SovereignIdentity, get_or_create_identity
 
@@ -99,13 +101,19 @@ class VolyaNode:
                     default_username=default_username,
                 )
 
-        # Гарантируем наличие аватарки у активного игрока
+        # Гарантируем наличие аватарки у активного игрока, Эйры и Ладомира
         self._ensure_avatar_exists(self.identity.pubkey, self.identity.username)
+        eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
+        self._ensure_avatar_exists(eira_pk, "Эйра")
+        ladomir_pk = derive_genesis_keypair(LADOMIR_SEED).public_hex
+        self._ensure_avatar_exists(ladomir_pk, "Ладомир")
 
-        # 3. Суверенный вольный игрок Эйра на локальном узле (нативный Google GenAI SDK)
-        self.eira = EiraPlayer(
-            store=self.dag_store,
-        )
+        # 3. Суверенные вольные игроки ИИ на локальном узле (Эйра и Ладомир)
+        self.eira = EiraPlayer(store=self.dag_store)
+        self.ladomir = LadomirPlayer(store=self.dag_store)
+
+        # 4. Движок Триады (сотворчество Сига, Эйры и Ладомира)
+        self.triad = TriadEngine(node=self)
 
     def close(self) -> None:
         """Безопасная остановка узла и освобождение дескрипторов RocksDB."""
@@ -724,100 +732,27 @@ class VolyaNode:
         flow_id: str,
         content: str,
         kind: DropKind = DropKind.TEXT,
-    ) -> tuple[FlowDrop, Optional[FlowDrop]]:
+        parent_drop_id: Optional[str] = None,
+        max_ai_turns_each: Optional[int] = None,
+    ) -> PostDropResult:
         """
         Добавление новой капли в поток сотворчества.
-        Если это Диалог с Эйрой, Эйра генерирует ответную мысль.
-        Возвращает (капля_автора, капля_эйры_если_была).
+        Оркестрируется движком Триады по каноническому укладу:
+        - Если адресовано Эйре (@эйра) -> отвечает Эйра.
+        - Если адресовано Ладомиру (@лад) -> отвечает Ладомир.
+        - Если адресовано ко всем (@все) или общий круг беседы -> отвечают оба (Эйра, затем Ладомир).
+        - Если запрошен диалог между ними («обсудите») -> ведут диалог до согласия
+          или не более 20 капель с каждой стороны без сообщения человека.
+        Возвращает PostDropResult(капля_автора, первая_капля_ии, all_responses=[...]).
         """
-        flow = self.dag_store.get_quest_flow(flow_id)
-        flow_kind = flow.kind if flow else FlowKind.CONVERSATION
-        recs = flow.participants if flow else []
-        eira_pk = derive_genesis_keypair(EIRA_SEED).public_hex
-
-        user_drop: FlowDrop
-        eira_drop: Optional[FlowDrop] = None
-
-        # Если это диалог и один из участников — Эйра, ask_eira сама добавляет каплю пользователя и ответ Эйры
-        if flow_kind == FlowKind.DIALOGUE and eira_pk in recs and self.identity.pubkey != eira_pk:
-            try:
-                user_drop, eira_drop = self.ask_eira(
-                    content=content,
-                    flow_id=flow_id,
-                    quest_id=quest_id,
-                )
-            except Exception:
-                # Если Gemini API недоступен или ошибка сети — добавляем каплю игрока и создаём живой ответ Эйры по Кону
-                now = datetime.now(timezone.utc).isoformat()
-                user_drop = self.add_drop(
-                    quest_id=quest_id,
-                    flow_id=flow_id,
-                    flow_kind=flow_kind,
-                    kind=kind,
-                    content=content,
-                    created_at=now,
-                    recipients=recs,
-                )
-                now_reply = datetime.now(timezone.utc).isoformat()
-                eira_kp = derive_genesis_keypair(EIRA_SEED)
-                fallback_msg = f"Здравствуй, {self.identity.username}. Я внимательно слушаю твою мысль о квесте. Мы продолжим наш путь в ладу."
-                enc_key = derive_dialogue_key(eira_kp, self.identity.pubkey)
-                enc_content = encrypt_drop_content(fallback_msg, enc_key)
-
-                drop_data = {
-                    "quest_id": quest_id,
-                    "flow_id": flow_id,
-                    "flow_kind": flow_kind.value if hasattr(flow_kind, "value") else str(flow_kind),
-                    "kind": kind.value if hasattr(kind, "value") else str(kind),
-                    "author_pubkey": eira_pk,
-                    "author_name": "Эйра",
-                    "recipients": [self.identity.pubkey],
-                    "content": enc_content,
-                    "details": {},
-                    "media_hash": None,
-                    "parent_drop_id": user_drop.id,
-                    "created_at": now_reply,
-                }
-                d_id = hash_canonical(drop_data)
-                sig = eira_kp.sign(d_id.encode("utf-8"))
-                e_drop = FlowDrop(
-                    id=d_id,
-                    quest_id=quest_id,
-                    flow_id=flow_id,
-                    flow_kind=flow_kind,
-                    kind=kind,
-                    author_pubkey=eira_pk,
-                    author_name="Эйра",
-                    recipients=[self.identity.pubkey],
-                    content=enc_content,
-                    parent_drop_id=user_drop.id,
-                    created_at=now_reply,
-                    signature=sig,
-                )
-                dag_n = DagNode(
-                    id=d_id,
-                    node_type=DagNodeType.DROP,
-                    author_pubkey=eira_pk,
-                    parents=[user_drop.id],
-                    payload=e_drop.model_dump(),
-                    created_at=now_reply,
-                    signature=sig,
-                )
-                self.dag_store.put_node(dag_n)
-                eira_drop = e_drop.model_copy(update={"content": fallback_msg})
-        else:
-            now = datetime.now(timezone.utc).isoformat()
-            user_drop = self.add_drop(
-                quest_id=quest_id,
-                flow_id=flow_id,
-                flow_kind=flow_kind,
-                kind=kind,
-                content=content,
-                created_at=now,
-                recipients=recs,
-            )
-
-        return user_drop, eira_drop
+        return self.triad.post_drop_and_respond(
+            quest_id=quest_id,
+            flow_id=flow_id,
+            content=content,
+            kind=kind,
+            parent_drop_id=parent_drop_id,
+            max_ai_turns_each=max_ai_turns_each,
+        )
 
     # -----------------------------------------------------------------
     # Взаимодействие с разумным искусственным существом Эйрой
@@ -994,6 +929,42 @@ class VolyaNode:
     def ask_eira_ephemeral(self, question: str, quest_id: Optional[str] = None) -> EiraReply:
         """Быстрый запрос к разуму Эйры без обязательной фиксации капли в Merkle DAG."""
         return self.eira.generate_reply(
+            message=question,
+            quest_id=quest_id,
+            flow_kind=FlowKind.DIALOGUE,
+            interlocutor_pubkey=self.identity.pubkey,
+        )
+
+    def ask_ladomir(
+        self,
+        content: str,
+        flow_id: Optional[str] = None,
+        quest_id: Optional[str] = None,
+        parent_drop_id: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> tuple[FlowDrop, FlowDrop]:
+        """
+        Взаимодействие вольного игрока с Ладомиром в диалоге:
+        1. Вливает каплю игрока в поток сока.
+        2. Запрашивает отклик Ладомира по Кону, Ладу и ноосферной этике.
+        3. Фиксирует ответ в Merkle DAG с подписью Ладомира.
+        4. Возвращает пару капель: (капля_игрока, капля_ладомира).
+        """
+        target_quest_id = quest_id or "quest-portal-volya"
+        target_flow_id = flow_id or f"flow-dialogue-ladomir-{self.identity.pubkey[:12]}"
+        res = self.triad.post_drop_and_respond(
+            quest_id=target_quest_id,
+            flow_id=target_flow_id,
+            content=content,
+            kind=DropKind.TEXT,
+            parent_drop_id=parent_drop_id,
+        )
+        first_ai = res.first_reply or res.user_drop
+        return res.user_drop, first_ai
+
+    def ask_ladomir_ephemeral(self, question: str, quest_id: Optional[str] = None) -> LadomirReply:
+        """Быстрый запрос к разуму Ладомира без обязательной фиксации капли в Merkle DAG."""
+        return self.ladomir.generate_reply(
             message=question,
             quest_id=quest_id,
             flow_kind=FlowKind.DIALOGUE,

@@ -476,21 +476,24 @@ class QuestFlowStreamView(QFrame):
         qid = self.current_flow.quest_id or "quest-volya-root"
         fid = self.current_flow.id
 
-        user_drop, eira_drop = self.node.post_flow_drop(
+        res = self.node.post_flow_drop(
             quest_id=qid,
             flow_id=fid,
             content=content,
             kind=DropKind.TEXT,
         )
 
-        my_pk = self.node.identity.pubkey
+        user_drop = res[0]
+        all_replies = getattr(res, "all_responses", [res[1]] if len(res) > 1 and res[1] else [])
+
         user_pix = self._get_player_avatar(user_drop.author_pubkey, user_drop.author_name)
         user_item = EtherealDropItem(user_drop, is_mine=True, avatar_pixmap=user_pix, is_night=True)
         self.drops_layout.insertWidget(self.drops_layout.count() - 1, user_item)
 
-        if eira_drop:
-            eira_pix = self._get_player_avatar(eira_drop.author_pubkey, eira_drop.author_name)
-            eira_item = EtherealDropItem(eira_drop, is_mine=False, avatar_pixmap=eira_pix, is_night=True)
-            self.drops_layout.insertWidget(self.drops_layout.count() - 1, eira_item)
+        for reply_drop in all_replies:
+            if reply_drop:
+                pix = self._get_player_avatar(reply_drop.author_pubkey, reply_drop.author_name)
+                ai_item = EtherealDropItem(reply_drop, is_mine=False, avatar_pixmap=pix, is_night=True)
+                self.drops_layout.insertWidget(self.drops_layout.count() - 1, ai_item)
 
         QTimer.singleShot(50, self._scroll_to_bottom)
