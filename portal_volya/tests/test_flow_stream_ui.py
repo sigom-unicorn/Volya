@@ -51,7 +51,7 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert hud._flow_menu_mode == "select"
 
         # 3. Клик по кружку Диалог на обратном серпе просмотра -> раскрывается ветвь диалогов
-        pt_sub_dia = QPointF(362.5, 54.0)
+        pt_sub_dia = QPointF(340.0, 55.0)
         hud._handle_flow_mouse_move(pt_sub_dia)
         click_sub_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_sub_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_sub_dia_ev)
@@ -62,7 +62,7 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert hud._sel_flow_kind is None
 
         # 5. Клик по кружку Беседа на обратном серпе просмотра -> раскрывается ветвь бесед
-        pt_sub_conv = QPointF(362.5, 90.0)
+        pt_sub_conv = QPointF(340.0, 89.0)
         hud._handle_flow_mouse_move(pt_sub_conv)
         click_sub_conv_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_sub_conv, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_sub_conv_ev)
@@ -77,7 +77,7 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert hud._flow_menu_mode == "create"
 
         # 7. Клик по 6-конечной звезде Диалог на обратном серпе сотворения -> открывается поле ввода
-        pt_star_dia = QPointF(242.5, 185.0)
+        pt_star_dia = QPointF(240.4, 157.0)
         hud._handle_flow_mouse_move(pt_star_dia)
         click_star_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_star_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_star_dia_ev)
@@ -110,7 +110,7 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
 
         # 10. Клик по первому игроку (Эйре) -> завершает создание диалога!
         y_eira = hud.flow_title_input.y() + 48.0 + 30.0
-        pt_eira = QPointF(460.0, y_eira)
+        pt_eira = QPointF(hud.flow_title_input.x() + 80.0, y_eira)
         hud._handle_flow_mouse_move(pt_eira)
         click_eira_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_eira, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_eira_ev)

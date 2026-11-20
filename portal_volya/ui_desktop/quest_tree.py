@@ -1957,13 +1957,13 @@ class QuestTreeHUD(QWidget):
         c_btn_view = QPointF(quest_cx + 46.0, quest_cy)     # Правая круглая кнопка (0°)
         c_btn_create = QPointF(quest_cx, quest_cy + 46.0)   # Нижняя 6-конечная звезда (+90°)
 
-        # Кнопки на обратном серпе просмотра (справа)
-        c_sub_dia = QPointF(362.5, 54.0)                    # Кружок Диалог
-        c_sub_conv = QPointF(362.5, 90.0)                   # Кружок Беседа
+        # Кнопки на обратном серпе просмотра (справа) — короткая веточка 24 px
+        c_sub_dia = QPointF(340.0, 55.0)                    # Кружок Диалог
+        c_sub_conv = QPointF(340.0, 89.0)                   # Кружок Беседа
 
-        # Звёзды на обратном серпе сотворения (арка концами вниз строго под квестом)
-        c_star_dia = QPointF(242.5, 185.0)                  # Звезда Диалог (левое крыло арки, 220°)
-        c_star_conv = QPointF(285.5, 185.0)                 # Звезда Беседа (правое крыло арки, 320°)
+        # Звёзды на обратном серпе сотворения (арка концами вниз строго под квестом) — короткая веточка 24 px
+        c_star_dia = QPointF(240.4, 157.0)                  # Звезда Диалог (левое крыло арки, 205°)
+        c_star_conv = QPointF(287.6, 157.0)                 # Звезда Беседа (правое крыло арки, 335°)
 
         d_view = math.hypot(pt.x() - c_btn_view.x(), pt.y() - c_btn_view.y())
         d_create = math.hypot(pt.x() - c_btn_create.x(), pt.y() - c_btn_create.y())
@@ -2076,7 +2076,7 @@ class QuestTreeHUD(QWidget):
 
                 # Кнопка '✔' для беседы
                 if self._create_step == "players" and self._create_flow_kind == FlowKind.CONVERSATION:
-                    c_conf = QPointF(410.0, self.flow_title_input.y() + 48.0)
+                    c_conf = QPointF(self.flow_title_input.x() + 30.0, self.flow_title_input.y() + 48.0)
                     if math.hypot(pt.x() - c_conf.x(), pt.y() - c_conf.y()) <= 15.0:
                         self._hovered_create_confirm_btn = True
                         self._flow_close_timer.stop()
@@ -2091,7 +2091,7 @@ class QuestTreeHUD(QWidget):
                     y_base_p = self.flow_title_input.y() + 48.0
                     for idx, p in enumerate(self._quest_players_cache):
                         y_p = y_base_p + 30.0 + idx * 36.0
-                        r_p = QRectF(410.0 + 30.0, y_p - 14.0, 160.0, 28.0)
+                        r_p = QRectF(self.flow_title_input.x() + 60.0, y_p - 14.0, 160.0, 28.0)
                         if r_p.contains(pt):
                             self._hovered_player_item = p
                             self._flow_close_timer.stop()
@@ -2116,11 +2116,11 @@ class QuestTreeHUD(QWidget):
             stem_x = 440.0
             flows = [f for f in self._quest_flows_cache if f.kind == self._sel_flow_kind]
             y_max_flows = 90.0 + 40.0 + max(1, len(flows)) * 36.0 + 30.0
-            if (340.0 <= pt.x() <= (stem_x + 250.0)) and (30.0 <= pt.y() <= y_max_flows):
+            if (310.0 <= pt.x() <= (stem_x + 250.0)) and (30.0 <= pt.y() <= y_max_flows):
                 in_active_zone = True
         elif self._flow_create_active:
             # Зона обратного серпа сотворения и полей ввода
-            if (220.0 <= pt.x() <= 620.0) and (110.0 <= pt.y() <= 480.0):
+            if (140.0 <= pt.x() <= 420.0) and (110.0 <= pt.y() <= 500.0):
                 in_active_zone = True
 
         if not in_active_zone and self._flow_menu_mode != "none":
@@ -2261,7 +2261,7 @@ class QuestTreeHUD(QWidget):
                     self._create_step = "title"
                     self.flow_title_input.clear()
                     self.flow_title_input.setPlaceholderText("Имя диалога...")
-                    self.flow_title_input.setGeometry(345, 171, 190, 28)
+                    self.flow_title_input.setGeometry(169, 186, 190, 28)
                     self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
                     self.flow_next_btn.show()
                     self.flow_title_input.setVisible(True)
@@ -2281,7 +2281,7 @@ class QuestTreeHUD(QWidget):
                     self._create_step = "title"
                     self.flow_title_input.clear()
                     self.flow_title_input.setPlaceholderText("Имя беседы...")
-                    self.flow_title_input.setGeometry(345, 171, 190, 28)
+                    self.flow_title_input.setGeometry(169, 186, 190, 28)
                     self.flow_next_btn.move(self.flow_title_input.width() - 25, (self.flow_title_input.height() - 22) // 2)
                     self.flow_next_btn.show()
                     self.flow_title_input.setVisible(True)
@@ -2347,19 +2347,19 @@ class QuestTreeHUD(QWidget):
         c_btn_create = QPointF(quest_cx, quest_cy + arc_radius)      # 6-конечная звезда снизу (+90°)
 
         # -------------------------------------------------------------
-        # ВЕТВЬ 1: ПРОСМОТР ПОТОКОВ (справа)
+        # ВЕТВЬ 1: ПРОСМОТР ПОТОКОВ (справа) — короткая веточка 24 px
         # -------------------------------------------------------------
         if self._flow_view_active:
-            rev_view_center = QPointF(384.0, 72.0)
-            rev_view_r = 28.0
-            p_view_belly = QPointF(rev_view_center.x() - rev_view_r, rev_view_center.y())  # (356.0, 72.0)
+            rev_view_center = QPointF(360.0, 72.0)
+            rev_view_r = 26.0
+            p_view_belly = QPointF(rev_view_center.x() - rev_view_r, rev_view_center.y())  # (334.0, 72.0)
 
-            # Живая органическая веточка от c_btn_view к чреву обратного серпа
+            # Живая органическая веточка (24 px) от c_btn_view к чреву обратного серпа
             branch_view_pts = []
-            for i in range(25):
-                t = i / 24.0
+            for i in range(20):
+                t = i / 19.0
                 vx = c_btn_view.x() + (p_view_belly.x() - c_btn_view.x()) * t
-                vy = 72.0 + 1.4 * math.sin(t * math.pi)
+                vy = 72.0 + 1.2 * math.sin(t * math.pi)
                 branch_view_pts.append(QPointF(vx, vy))
             self._draw_volumetric_branch(painter, branch_view_pts, 2.4, 1.6, night)
 
@@ -2380,8 +2380,8 @@ class QuestTreeHUD(QWidget):
             )
 
             # Круглые кнопки на обратном серпе
-            c_sub_dia = QPointF(362.5, 54.0)
-            c_sub_conv = QPointF(362.5, 90.0)
+            c_sub_dia = QPointF(rev_view_center.x() + rev_view_r * math.cos(math.radians(220.0)), rev_view_center.y() + rev_view_r * math.sin(math.radians(220.0)))
+            c_sub_conv = QPointF(rev_view_center.x() + rev_view_r * math.cos(math.radians(140.0)), rev_view_center.y() + rev_view_r * math.sin(math.radians(140.0)))
 
             # Если выбран тип потока — ветвь со списком вырастает из-под кружка
             if self._sel_flow_kind in (FlowKind.DIALOGUE, FlowKind.CONVERSATION):
@@ -2399,18 +2399,18 @@ class QuestTreeHUD(QWidget):
             self._draw_circle_control(painter, c_sub_conv, 11.5, "conv", is_sub_conv_act, is_sub_conv_hov, glow_color, core_color, night)
 
         # -------------------------------------------------------------
-        # ВЕТВЬ 2: СОТВОРЕНИЕ ПОТОКА (строго вниз, арка концами вниз)
+        # ВЕТВЬ 2: СОТВОРЕНИЕ ПОТОКА (строго вниз, арка концами вниз) — короткая веточка 24 px
         # -------------------------------------------------------------
         if self._flow_create_active:
-            arc_c = QPointF(quest_cx, quest_cy + 46.0 + 85.0)  # (264.0, 203.0)
-            arc_r = 28.0
-            p_apex = QPointF(quest_cx, arc_c.y() - arc_r)       # (264.0, 175.0) — вершина арки!
+            arc_c = QPointF(quest_cx, 168.0)
+            arc_r = 26.0
+            p_apex = QPointF(quest_cx, arc_c.y() - arc_r)       # (264.0, 142.0) — вершина арки!
 
-            # Живая органическая веточка Безье строго вниз к апексу арки
+            # Живая органическая веточка (24 px) строго вниз к апексу арки
             branch_create_pts = []
-            for i in range(30):
-                t = i / 29.0
-                wave = 2.8 * math.sin(t * math.pi)
+            for i in range(20):
+                t = i / 19.0
+                wave = 1.6 * math.sin(t * math.pi)
                 bx = c_btn_create.x() + wave
                 by = c_btn_create.y() + (p_apex.y() - c_btn_create.y()) * t
                 branch_create_pts.append(QPointF(bx, by))
@@ -2433,38 +2433,32 @@ class QuestTreeHUD(QWidget):
             )
 
             # Две 6-конечные звёздочки на крыльях арки (концы вниз):
-            # Диалог слева (220°), Беседа справа (320°)
-            c_star_dia = QPointF(arc_c.x() + arc_r * math.cos(math.radians(220.0)), arc_c.y() + arc_r * math.sin(math.radians(220.0)))
-            c_star_conv = QPointF(arc_c.x() + arc_r * math.cos(math.radians(320.0)), arc_c.y() + arc_r * math.sin(math.radians(320.0)))
+            # Диалог слева (205°), Беседа справа (335°)
+            c_star_dia = QPointF(arc_c.x() + arc_r * math.cos(math.radians(205.0)), arc_c.y() + arc_r * math.sin(math.radians(205.0)))
+            c_star_conv = QPointF(arc_c.x() + arc_r * math.cos(math.radians(335.0)), arc_c.y() + arc_r * math.sin(math.radians(335.0)))
 
-            # Если идёт сотворение — плавная веточка к полю ввода
+            # Если идёт сотворение — плавная веточка вниз к полю ввода прямо под серпом
             if self._create_step in ("title", "players") and self._create_flow_kind:
-                target_x = 345.0
-                target_y = 185.0
+                active_star = c_star_dia if self._create_flow_kind == FlowKind.DIALOGUE else c_star_conv
                 stem_pts = []
-                if self._create_flow_kind == FlowKind.CONVERSATION:
-                    # От правой звезды плавно вправо
-                    for i in range(20):
-                        t = i / 19.0
-                        sx = c_star_conv.x() + (target_x - c_star_conv.x()) * t
-                        sy = c_star_conv.y() + 1.2 * math.sin(t * math.pi)
-                        stem_pts.append(QPointF(sx, sy))
-                else:
-                    # От левой звезды плавный дуговой побег под аркой вправо
-                    p_s = c_star_dia
-                    p_c1 = QPointF(c_star_dia.x() + 15.0, c_star_dia.y() + 30.0)
-                    p_c2 = QPointF(target_x - 40.0, target_y + 10.0)
-                    p_e = QPointF(target_x, target_y)
-                    for i in range(25):
-                        t = i / 24.0
-                        bx = (1-t)**3 * p_s.x() + 3*(1-t)**2*t * p_c1.x() + 3*(1-t)*t**2 * p_c2.x() + t**3 * p_e.x()
-                        by = (1-t)**3 * p_s.y() + 3*(1-t)**2*t * p_c1.y() + 3*(1-t)*t**2 * p_c2.y() + t**3 * p_e.y()
-                        stem_pts.append(QPointF(bx, by))
+                for i in range(15):
+                    t = i / 14.0
+                    sx = active_star.x()
+                    sy = active_star.y() + (self.flow_title_input.y() - active_star.y()) * t
+                    stem_pts.append(QPointF(sx, sy))
                 self._draw_volumetric_branch(painter, stem_pts, 2.0, 1.4, night)
 
                 if self._create_step == "players":
-                    btn_right_edge = QPointF(self.flow_title_input.x() + self.flow_title_input.width(), self.flow_title_input.y() + 14.0)
-                    self._draw_creation_players_list(painter, btn_right_edge, glow_color, core_color, night)
+                    btn_bottom_edge = QPointF(self.flow_title_input.x() + 30.0, self.flow_title_input.y() + self.flow_title_input.height())
+                    self._draw_creation_players_list(painter, btn_bottom_edge, glow_color, core_color, night)
+
+            is_s_dia_act = (self._create_flow_kind == FlowKind.DIALOGUE and self._create_step in ("title", "players"))
+            is_s_dia_hov = (self._hovered_flow_btn == "sub_create_dia")
+            self._draw_star_control(painter, c_star_dia, 12.0, "dia", is_s_dia_act, is_s_dia_hov, glow_color, core_color, night)
+
+            is_s_conv_act = (self._create_flow_kind == FlowKind.CONVERSATION and self._create_step in ("title", "players"))
+            is_s_conv_hov = (self._hovered_flow_btn == "sub_create_conv")
+            self._draw_star_control(painter, c_star_conv, 12.0, "conv", is_s_conv_act, is_s_conv_hov, glow_color, core_color, night)
 
             is_s_dia_act = (self._create_flow_kind == FlowKind.DIALOGUE and self._create_step in ("title", "players"))
             is_s_dia_hov = (self._hovered_flow_btn == "sub_create_dia")
@@ -2736,7 +2730,7 @@ class QuestTreeHUD(QWidget):
     ) -> None:
         """Отрисовка списка игроков квеста с аватарками и кнопкой подтверждения для беседы."""
         y_bend = self.flow_title_input.y() + 48.0
-        corner_bend = QPointF(410.0, y_bend)
+        corner_bend = QPointF(self.flow_title_input.x() + 30.0, y_bend)
         players = self._quest_players_cache
         count = max(1, len(players))
         y_last_p = y_bend + 30.0 + (count - 1) * 36.0
@@ -2745,8 +2739,8 @@ class QuestTreeHUD(QWidget):
         pts_curve: List[QPointF] = []
         for i in range(13):
             t = i / 12.0
-            p0 = QPointF(start_pt.x() - 2.0, start_pt.y())
-            p1 = QPointF(corner_bend.x() - 10.0, start_pt.y())
+            p0 = start_pt
+            p1 = QPointF(corner_bend.x(), (start_pt.y() + corner_bend.y()) * 0.5)
             p2 = corner_bend
             x = (1 - t) ** 2 * p0.x() + 2 * (1 - t) * t * p1.x() + t ** 2 * p2.x()
             y = (1 - t) ** 2 * p0.y() + 2 * (1 - t) * t * p1.y() + t ** 2 * p2.y()
