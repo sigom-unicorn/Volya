@@ -69,6 +69,7 @@ from portal_volya.ui_desktop.avatar_generator import (
     generate_default_avatar_png,
     process_custom_avatar_png,
 )
+from portal_volya.ui_desktop.crescent import draw_volumetric_crescent
 
 
 def make_empty_avatar_pixmap(size: int = 96) -> QPixmap:
@@ -1219,33 +1220,21 @@ class SacredPinLockWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        # Координаты дуги
-        arc_box = QRectF(
-            self.cx - self.arc_radius,
-            self.cy - self.arc_radius,
-            2 * self.arc_radius,
-            2 * self.arc_radius,
+        # 1. Отрисовка объемного 3D серпа месяца под аватаркой игрока на входе
+        draw_volumetric_crescent(
+            painter=painter,
+            center=QPointF(self.cx, self.cy),
+            r_mid=self.arc_radius,
+            start_deg=22.0,
+            span_deg=136.0,
+            t_out=5.5,
+            t_in=4.5,
+            glow_color=QColor(253, 224, 71),
+            core_color=QColor(254, 240, 138),
+            night=cur_night,
+            is_active=True,
+            hovered=self._arc_hovered,
         )
-
-        start_angle = 220 * 16
-        span_angle = 100 * 16
-
-        # 1. Отрисовка дуги
-        if self._arc_hovered:
-            glow_pen = QPen(QColor(253, 224, 71, 90), 4.5)
-            glow_pen.setCapStyle(Qt.RoundCap)
-            painter.setPen(glow_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
-
-            core_pen = QPen(QColor(254, 240, 138, 240), 2.0)
-            core_pen.setCapStyle(Qt.RoundCap)
-            painter.setPen(core_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
-        else:
-            calm_pen = QPen(QColor(212, 175, 55, 110), 1.8)
-            calm_pen.setCapStyle(Qt.RoundCap)
-            painter.setPen(calm_pen)
-            painter.drawArc(arc_box, start_angle, span_angle)
 
         # 2. Функция отрисовки светящейся нити с искорками
         def draw_thread(p1: QPointF, p2: QPointF) -> None:
