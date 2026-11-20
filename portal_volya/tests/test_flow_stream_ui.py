@@ -77,7 +77,7 @@ def test_quest_tree_dual_arc_flow_menu(qapp):
         assert hud._flow_menu_mode == "create"
 
         # 7. Клик по 6-конечной звезде Диалог на обратном серпе сотворения -> открывается поле ввода
-        pt_star_dia = QPointF(270.5, 197.0)
+        pt_star_dia = QPointF(242.5, 185.0)
         hud._handle_flow_mouse_move(pt_star_dia)
         click_star_dia_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, pt_star_dia, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
         hud.mousePressEvent(click_star_dia_ev)
