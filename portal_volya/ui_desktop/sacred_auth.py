@@ -556,6 +556,7 @@ class SacredPinLockWidget(QWidget):
         """)
         self.lbl_name.setAlignment(Qt.AlignCenter)
         self.lbl_name.setGeometry(int(self.cx - 130), 22, 260, 24)
+        self.lbl_name.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         # 2. Аватарка в центре
         self.lbl_avatar = QLabel(self)
@@ -565,7 +566,7 @@ class SacredPinLockWidget(QWidget):
             int(self.avatar_size),
             int(self.avatar_size),
         )
-        self.lbl_avatar.setCursor(Qt.PointingHandCursor)
+        self.lbl_avatar.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._refresh_avatar_for_current_identity()
 
         # =========================================================
@@ -1180,15 +1181,21 @@ class SacredPinLockWidget(QWidget):
 
         if self._switch_list_visible:
             is_hover = True
+            avatar_zone = False
         else:
-            # Наведение строго на аватарку (серп появляется только при наведении на аватарку)
+            # Наведение строго на аватарку игрока (серп появляется только при наведении на аватарку)
             dist_avatar = math.hypot(mx - self.cx, my - self.cy)
-            avatar_zone = dist_avatar <= (self.avatar_radius + 6.0)
+            avatar_zone = dist_avatar <= self.avatar_radius
 
-            # Если меню уже раскрыто, поддерживаем наведение при переходе курсора к цепочке кнопок
+            # Если серп и кнопки уже раскрыты, поддерживаем видимость при переходе курсора к цепочке кнопок
             btn_spine_zone = (abs(mx - self.cx) <= 85) and (self.cy <= my <= 325)
 
             is_hover = avatar_zone or (self._arc_hovered and btn_spine_zone)
+
+        if avatar_zone:
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            self.unsetCursor()
 
         if is_hover != self._arc_hovered:
             self._arc_hovered = is_hover
@@ -1198,6 +1205,7 @@ class SacredPinLockWidget(QWidget):
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event) -> None:
+        self.unsetCursor()
         if not self._switch_list_visible:
             if self._arc_hovered:
                 self._arc_hovered = False
